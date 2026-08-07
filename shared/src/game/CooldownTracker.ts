@@ -2,29 +2,34 @@ import type { PlayerCooldown, PlayerId } from "../domain/index.ts";
 
 /** Tracks per-player action availability for one battle. */
 export class CooldownTracker {
+  private readonly nextTicksByPlayer = new Map<PlayerId, number>();
+
   /** Restores cooldown state from optional serialized entries. */
   constructor(initial: readonly PlayerCooldown[] = []) {
-    void initial;
+    for (const cooldown of initial) {
+      if (this.nextTicksByPlayer.has(cooldown.playerId)) {
+        throw new Error(`Duplicate cooldown for player ${cooldown.playerId}`);
+      }
+      this.assertTick(cooldown.nextActionTick, "Next action tick");
+      this.nextTicksByPlayer.set(cooldown.playerId, cooldown.nextActionTick);
+    }
   }
 
   /** Returns whether a player may act at the supplied tick. */
   canAct(playerId: PlayerId, currentTick: number): boolean {
-    void playerId;
-    void currentTick;
-    throw new Error("CooldownTracker.canAct is not implemented yet");
+    this.assertTick(currentTick, "Current tick");
+    return currentTick >= this.nextActionTick(playerId);
   }
 
   /** Returns the first tick at which a player may act. */
   nextActionTick(playerId: PlayerId): number {
-    void playerId;
-    throw new Error("CooldownTracker.nextActionTick is not implemented yet");
+    return this.nextTicksByPlayer.get(playerId) ?? 0;
   }
 
   /** Returns the non-negative wait remaining at the supplied tick. */
   remainingTicks(playerId: PlayerId, currentTick: number): number {
-    void playerId;
-    void currentTick;
-    throw new Error("CooldownTracker.remainingTicks is not implemented yet");
+    this.assertTick(currentTick, "Current tick");
+    return Math.max(0, this.nextActionTick(playerId) - currentTick);
   }
 
   /** Starts or replaces a player's cooldown and returns its serialized form. */
@@ -33,14 +38,28 @@ export class CooldownTracker {
     currentTick: number,
     durationTicks: number,
   ): PlayerCooldown {
-    void playerId;
-    void currentTick;
-    void durationTicks;
-    throw new Error("CooldownTracker.start is not implemented yet");
+    this.assertTick(currentTick, "Current tick");
+    this.assertTick(durationTicks, "Cooldown duration");
+    const nextActionTick = currentTick + durationTicks;
+    if (!Number.isSafeInteger(nextActionTick)) {
+      throw new RangeError(
+        "Cooldown next action tick exceeds the safe integer range",
+      );
+    }
+    this.nextTicksByPlayer.set(playerId, nextActionTick);
+    return { playerId, nextActionTick };
   }
 
   /** Returns deterministic, serializable cooldown state. */
   toData(): PlayerCooldown[] {
-    throw new Error("CooldownTracker.toData is not implemented yet");
+    return [...this.nextTicksByPlayer.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([playerId, nextActionTick]) => ({ playerId, nextActionTick }));
+  }
+
+  private assertTick(value: number, label: string): void {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new RangeError(`${label} must be a non-negative safe integer`);
+    }
   }
 }

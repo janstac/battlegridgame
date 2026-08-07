@@ -1,6 +1,6 @@
 import type { Position, SerializedGrid } from "../domain/index.ts";
 
-/** Error thrown when a coordinate or index lies outside a fixed grid. */
+/** Error thrown when a coordinate lies outside a fixed grid. */
 export class GridBoundsError extends RangeError {
   /** Coordinate that failed bounds validation. */
   readonly position: Position;
@@ -27,17 +27,31 @@ export class FixedGrid<T> {
     height: number,
     createCell: (position: Position) => T,
   ) {
-    void createCell;
+    if (!Number.isSafeInteger(width) || width < 1) {
+      throw new RangeError("Grid width must be a positive safe integer");
+    }
+    if (!Number.isSafeInteger(height) || height < 1) {
+      throw new RangeError("Grid height must be a positive safe integer");
+    }
+
     this.width = width;
     this.height = height;
-    this.cellValues = [];
-    throw new Error("FixedGrid is not implemented yet");
+    this.cellValues = new Array<T>(width * height);
+    for (let index = 0; index < this.cellValues.length; index += 1) {
+      this.cellValues[index] = createCell(this.uncheckedPositionOf(index));
+    }
   }
 
   /** Restores a grid from its plain-data representation. */
   static fromData<T>(data: SerializedGrid<T>): FixedGrid<T> {
-    void data;
-    throw new Error("FixedGrid.fromData is not implemented yet");
+    if (data.cells.length !== data.width * data.height) {
+      throw new RangeError(
+        `Serialized grid contains ${data.cells.length} cells; expected ${data.width * data.height}`,
+      );
+    }
+    return new FixedGrid(data.width, data.height, (position) =>
+      data.cells[position.y * data.width + position.x] as T,
+    );
   }
 
   /** Total number of cells. */
@@ -47,44 +61,59 @@ export class FixedGrid<T> {
 
   /** Returns whether a zero-based position is inside the grid. */
   contains(position: Position): boolean {
-    void position;
-    throw new Error("FixedGrid.contains is not implemented yet");
+    return (
+      Number.isInteger(position.x) &&
+      Number.isInteger(position.y) &&
+      position.x >= 0 &&
+      position.x < this.width &&
+      position.y >= 0 &&
+      position.y < this.height
+    );
   }
 
   /** Converts a checked position to its row-major index. */
   indexOf(position: Position): number {
-    void position;
-    throw new Error("FixedGrid.indexOf is not implemented yet");
+    if (!this.contains(position)) {
+      throw new GridBoundsError(position);
+    }
+    return position.y * this.width + position.x;
   }
 
   /** Converts a checked row-major index to a position. */
   positionOf(index: number): Position {
-    void index;
-    throw new Error("FixedGrid.positionOf is not implemented yet");
+    if (!Number.isInteger(index) || index < 0 || index >= this.size) {
+      throw new RangeError(`Grid index ${index} is out of bounds`);
+    }
+    return this.uncheckedPositionOf(index);
   }
 
   /** Returns the value at a checked position. */
   get(position: Position): T {
-    void position;
-    throw new Error("FixedGrid.get is not implemented yet");
+    return this.cellValues[this.indexOf(position)] as T;
   }
 
   /** Replaces the value at a checked position. */
   set(position: Position, value: T): void {
-    void position;
-    void value;
-    throw new Error("FixedGrid.set is not implemented yet");
+    this.cellValues[this.indexOf(position)] = value;
   }
 
   /** Returns in-bounds neighbours in stable up/right/down/left order. */
   orthogonalNeighbours(position: Position): Position[] {
-    void position;
-    throw new Error("FixedGrid.orthogonalNeighbours is not implemented yet");
+    this.indexOf(position);
+    const candidates: Position[] = [
+      { x: position.x, y: position.y - 1 },
+      { x: position.x + 1, y: position.y },
+      { x: position.x, y: position.y + 1 },
+      { x: position.x - 1, y: position.y },
+    ];
+    return candidates.filter((candidate) => this.contains(candidate));
   }
 
   /** Iterates positions and values in row-major order. */
   *entries(): IterableIterator<readonly [Position, T]> {
-    throw new Error("FixedGrid.entries is not implemented yet");
+    for (let index = 0; index < this.size; index += 1) {
+      yield [this.uncheckedPositionOf(index), this.cellValues[index] as T];
+    }
   }
 
   /** Iterates values in row-major order. */
@@ -94,13 +123,19 @@ export class FixedGrid<T> {
 
   /** Creates an independent grid using the supplied value copier. */
   clone(cloneValue: (value: T) => T): FixedGrid<T> {
-    void cloneValue;
-    throw new Error("FixedGrid.clone is not implemented yet");
+    return FixedGrid.fromData(this.toData(cloneValue));
   }
 
   /** Produces plain row-major data using the supplied value copier. */
   toData(cloneValue: (value: T) => T): SerializedGrid<T> {
-    void cloneValue;
-    throw new Error("FixedGrid.toData is not implemented yet");
+    return {
+      width: this.width,
+      height: this.height,
+      cells: this.cellValues.map(cloneValue),
+    };
+  }
+
+  private uncheckedPositionOf(index: number): Position {
+    return { x: index % this.width, y: Math.floor(index / this.width) };
   }
 }

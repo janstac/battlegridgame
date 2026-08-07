@@ -25,6 +25,11 @@ export class FixedCooldownPolicy implements CooldownPolicy {
 
   /** Creates a fixed-duration policy. */
   constructor(durationTicks: number) {
+    if (!Number.isSafeInteger(durationTicks) || durationTicks < 0) {
+      throw new RangeError(
+        "Cooldown duration must be a non-negative safe integer",
+      );
+    }
     this.fixedDurationTicks = durationTicks;
   }
 
