@@ -222,10 +222,16 @@ select {
 }
 
 .battle-cell--interactive:hover .battle-cell__surface,
-.battle-cell--interactive:focus-visible .battle-cell__surface {
+.battle-cell--interactive:focus-within .battle-cell__surface {
   filter: brightness(1.18);
   stroke: #ffffff;
   stroke-width: 0.065;
+}
+
+.battle-cell__hit-target {
+  fill: transparent;
+  pointer-events: all;
+  outline: none;
 }
 
 .battle-cell--selected-owner .battle-cell__surface {

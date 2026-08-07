@@ -18,15 +18,23 @@ export type BattleCellViewProps = Readonly<{
   onActivate(position: Position): void;
 }>;
 
-function cellLabel(cell: BattleCell, position: Position): string {
+function cellLabel(
+  cell: BattleCell,
+  position: Position,
+  pendingDueTick?: number,
+): string {
   const location = `Column ${position.x + 1}, row ${position.y + 1}`;
+  const pendingLabel =
+    pendingDueTick === undefined
+      ? ""
+      : `, split due on tick ${pendingDueTick}`;
   switch (cell.kind) {
     case "empty":
       return `${location}: empty`;
     case "wall":
       return `${location}: wall`;
     case "occupied":
-      return `${location}: ${cell.playerId}, count ${cell.count}`;
+      return `${location}: ${cell.playerId}, count ${cell.count}${pendingLabel}`;
   }
 }
 
@@ -44,9 +52,12 @@ export function BattleCellView({
     cell.kind === "occupied"
       ? colorsForPlayer(cell.playerId, players)
       : undefined;
-  const canActivate = !disabled && cell.kind !== "wall";
   const ownedBySelected =
     cell.kind === "occupied" && cell.playerId === selectedPlayerId;
+  // This only suppresses impossible UI intents. The authoritative session still
+  // validates ownership because state can change between rendering and input.
+  const canActivate = !disabled && ownedBySelected;
+  const label = cellLabel(cell, position, pendingDueTick);
 
   const activate = () => {
     if (canActivate) {
@@ -54,7 +65,7 @@ export function BattleCellView({
     }
   };
 
-  const handleKeyDown = (event: KeyboardEvent<SVGGElement>) => {
+  const handleKeyDown = (event: KeyboardEvent<SVGRectElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       activate();
@@ -74,12 +85,8 @@ export function BattleCellView({
     <g
       className={classNames}
       transform={`translate(${position.x} ${position.y})`}
-      role={canActivate ? "button" : "img"}
-      tabIndex={canActivate ? 0 : undefined}
-      aria-label={cellLabel(cell, position)}
-      aria-disabled={!canActivate}
-      onClick={activate}
-      onKeyDown={handleKeyDown}
+      role="gridcell"
+      aria-label={label}
     >
       <rect
         className="battle-cell__surface"
@@ -113,10 +120,24 @@ export function BattleCellView({
       )}
 
       {pendingDueTick !== undefined && (
-        <g aria-label={`Split due on tick ${pendingDueTick}`}>
+        <g aria-hidden="true">
           <circle className="battle-cell__pending" cx="0.78" cy="0.2" r="0.09" />
-          <title>Split due on tick {pendingDueTick}</title>
         </g>
+      )}
+
+      {canActivate && (
+        <rect
+          className="battle-cell__hit-target"
+          x="0"
+          y="0"
+          width="1"
+          height="1"
+          role="button"
+          tabIndex={0}
+          aria-label={`Increment ${label}`}
+          onClick={activate}
+          onKeyDown={handleKeyDown}
+        />
       )}
     </g>
   );

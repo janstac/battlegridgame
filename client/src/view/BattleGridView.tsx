@@ -30,39 +30,49 @@ export function BattleGridView({
       split.dueTick,
     ]),
   );
+  const rows = Array.from({ length: height }, (_, y) =>
+    cells.slice(y * width, (y + 1) * width),
+  );
 
   return (
     <svg
       className="battle-grid"
       viewBox={`0 0 ${width} ${height}`}
-      role="group"
+      role="grid"
       aria-label={`${width} by ${height} battle grid`}
+      aria-rowcount={height}
+      aria-colcount={width}
       preserveAspectRatio="xMidYMid meet"
     >
-      <rect className="battle-grid__backdrop" width={width} height={height} />
-      {cells.map((cell, index) => {
-        // Serialized grids are row-major; no game rule is inferred here.
-        const position = {
-          x: index % width,
-          y: Math.floor(index / width),
-        };
-        return (
-          <BattleCellView
-            key={positionKey(position)}
-            cell={cell}
-            position={position}
-            players={snapshot.players}
-            selectedPlayerId={selectedPlayerId}
-            {...(pendingByPosition.has(positionKey(position))
-              ? {
-                  pendingDueTick: pendingByPosition.get(positionKey(position))!,
-                }
-              : {})}
-            disabled={snapshot.status.kind === "finished"}
-            onActivate={onCellActivate}
-          />
-        );
-      })}
+      <rect
+        className="battle-grid__backdrop"
+        width={width}
+        height={height}
+        role="presentation"
+      />
+      {rows.map((row, y) => (
+        <g role="row" aria-rowindex={y + 1} key={y}>
+          {row.map((cell, x) => {
+            // Serialized grids are row-major; no game rule is inferred here.
+            const position = { x, y };
+            const key = positionKey(position);
+            return (
+              <BattleCellView
+                key={key}
+                cell={cell}
+                position={position}
+                players={snapshot.players}
+                selectedPlayerId={selectedPlayerId}
+                {...(pendingByPosition.has(key)
+                  ? { pendingDueTick: pendingByPosition.get(key)! }
+                  : {})}
+                disabled={snapshot.status.kind === "finished"}
+                onActivate={onCellActivate}
+              />
+            );
+          })}
+        </g>
+      ))}
     </svg>
   );
 }
