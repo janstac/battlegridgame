@@ -446,6 +446,90 @@ test("engine rejects unknown command discriminants at its runtime boundary", () 
   assert.deepEqual(engine.getSnapshot(), before);
 });
 
+test("an overflowing direct increment preserves the complete engine state", () => {
+  const engine = BattleEngine.restore(
+    makeSnapshot(makeGrid(3, 1, [
+      [{ x: 0, y: 0 }, occupied(ALPHA, Number.MAX_SAFE_INTEGER)],
+      [{ x: 2, y: 0 }, occupied(BETA, 1)],
+    ]), {
+      tick: 7,
+      revision: 11,
+      cooldowns: [{ playerId: BETA, nextActionTick: 7 }],
+    }),
+    CONFIG,
+    NO_COOLDOWN,
+  );
+  const before = engine.getSnapshot();
+
+  assert.throws(
+    () => engine.applyCommand(
+      { playerId: ALPHA },
+      { kind: "incrementCell", position: { x: 0, y: 0 } },
+    ),
+    /positive safe integer/,
+  );
+  assert.deepEqual(engine.getSnapshot(), before);
+
+  // A failure on one player does not poison later valid commands.
+  assert.equal(increment(engine, BETA, 2, 0).accepted, true);
+});
+
+test("a split overflow rolls back its removed queue entry and emptied source", () => {
+  const engine = BattleEngine.restore(
+    makeSnapshot(makeGrid(3, 1, [
+      [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
+      [{ x: 1, y: 0 }, occupied(BETA, Number.MAX_SAFE_INTEGER)],
+    ]), {
+      revision: 4,
+      cooldowns: [{ playerId: ALPHA, nextActionTick: 0 }],
+      pendingSplits: [
+        { position: { x: 0, y: 0 }, dueTick: 1, sequence: 8 },
+      ],
+    }),
+    CONFIG,
+    NO_COOLDOWN,
+  );
+  const before = engine.getSnapshot();
+
+  assert.throws(() => engine.advanceTick(), /positive safe integer/);
+  assert.deepEqual(engine.getSnapshot(), before);
+
+  // Tick rollback leaves the engine able to process unrelated commands.
+  assert.equal(increment(engine, ALPHA, 0, 0).accepted, true);
+});
+
+test("rollback restores the split scheduler's hidden next sequence cursor", () => {
+  const finalSequence = Number.MAX_SAFE_INTEGER;
+  const engine = BattleEngine.restore(
+    makeSnapshot(makeGrid(4, 3, [
+      [{ x: 1, y: 1 }, occupied(ALPHA, 1)],
+      [{ x: 1, y: 0 }, occupied(ALPHA, 2)],
+      [{ x: 2, y: 1 }, occupied(BETA, 3)],
+    ]), {
+      pendingSplits: [{
+        position: { x: 1, y: 1 },
+        dueTick: 1,
+        sequence: finalSequence - 1,
+      }],
+    }),
+    CONFIG,
+    NO_COOLDOWN,
+  );
+  const before = engine.getSnapshot();
+
+  // The up neighbour consumes the last sequence before the captured right
+  // neighbour also needs one. Its mutation and the hidden cursor must roll back.
+  assert.throws(() => engine.advanceTick(), /sequence space is exhausted/);
+  assert.deepEqual(engine.getSnapshot(), before);
+
+  const result = increment(engine, ALPHA, 1, 0);
+  assert.equal(eventOfKind(result.events, "splitScheduled").sequence, finalSequence);
+  assert.deepEqual(
+    engine.getSnapshot().pendingSplits.map(({ sequence }) => sequence),
+    [finalSequence - 1, finalSequence],
+  );
+});
+
 test("split sequences stop at the safe-integer boundary without overflowing", () => {
   const finalSequence = Number.MAX_SAFE_INTEGER;
   const scheduler = new SplitScheduler([{

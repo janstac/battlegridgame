@@ -27,12 +27,12 @@ export class BattleEngine {
   private readonly id: BattleId;
   private readonly playerIds: PlayerId[];
   private readonly playerIdSet: Set<PlayerId>;
-  private readonly grid: FixedGrid<BattleCell>;
+  private grid: FixedGrid<BattleCell>;
   private readonly config: BattleConfig;
   private readonly cooldownPolicy: CooldownPolicy;
-  private readonly cooldowns: CooldownTracker;
-  private readonly splits: SplitScheduler;
-  private readonly dueSplitIndices = new Set<number>();
+  private cooldowns: CooldownTracker;
+  private splits: SplitScheduler;
+  private dueSplitIndices = new Set<number>();
   private tick: number;
   private revision: number;
   private battleStatus: BattleStatus;
@@ -136,17 +136,19 @@ export class BattleEngine {
     context: CommandContext,
     command: BattleCommand,
   ): CommandResult {
-    // Keep this boundary exhaustive even when an untyped JavaScript caller
-    // bypasses TypeScript and supplies a future or fabricated discriminant.
-    const commandKind = (command as { kind?: unknown } | null)?.kind;
-    switch (commandKind) {
-      case "incrementCell":
-        return this.applyIncrementCommand(context, command);
-      default:
-        throw new TypeError(
-          `Unsupported battle command kind: ${String(commandKind)}`,
-        );
-    }
+    return this.runAtomically(() => {
+      // Keep this boundary exhaustive even when an untyped JavaScript caller
+      // bypasses TypeScript and supplies a future or fabricated discriminant.
+      const commandKind = (command as { kind?: unknown } | null)?.kind;
+      switch (commandKind) {
+        case "incrementCell":
+          return this.applyIncrementCommand(context, command);
+        default:
+          throw new TypeError(
+            `Unsupported battle command kind: ${String(commandKind)}`,
+          );
+      }
+    });
   }
 
   private applyIncrementCommand(
@@ -208,37 +210,67 @@ export class BattleEngine {
     if (this.battleStatus.kind === "finished") {
       return { tick: this.tick, events: [] };
     }
-    if (this.tick === Number.MAX_SAFE_INTEGER) {
-      throw new RangeError("Battle tick exceeds the safe integer range");
-    }
-    this.assertRevisionCanAdvance();
-
-    this.tick += 1;
-    const events: BattleEvent[] = [];
-    const dueSplits = this.splits.takeDue(this.tick);
-    for (const pending of dueSplits) {
-      this.dueSplitIndices.add(this.grid.indexOf(pending.position));
-    }
-
-    // takeDue fixes this tick's work list, so newly scheduled chain reactions wait.
-    for (const pending of dueSplits) {
-      // Once this entry starts, later splits may legitimately repopulate it.
-      this.dueSplitIndices.delete(this.grid.indexOf(pending.position));
-      events.push(...this.resolveSplit(pending));
-      const won = this.finishIfWon();
-      if (won !== undefined) {
-        events.push(won);
-        // A terminal battle must never retain future or same-tick work.
-        this.splits.clear();
-        this.dueSplitIndices.clear();
-        break;
+    return this.runAtomically(() => {
+      if (this.tick === Number.MAX_SAFE_INTEGER) {
+        throw new RangeError("Battle tick exceeds the safe integer range");
       }
-    }
-    this.dueSplitIndices.clear();
+      this.assertRevisionCanAdvance();
 
-    // The logical tick is snapshot state, even on ticks without gameplay events.
-    this.revision += 1;
-    return { tick: this.tick, events };
+      this.tick += 1;
+      const events: BattleEvent[] = [];
+      const dueSplits = this.splits.takeDue(this.tick);
+      for (const pending of dueSplits) {
+        this.dueSplitIndices.add(this.grid.indexOf(pending.position));
+      }
+
+      // takeDue fixes this tick's work list, so newly scheduled chain reactions wait.
+      for (const pending of dueSplits) {
+        // Once this entry starts, later splits may legitimately repopulate it.
+        this.dueSplitIndices.delete(this.grid.indexOf(pending.position));
+        events.push(...this.resolveSplit(pending));
+        const won = this.finishIfWon();
+        if (won !== undefined) {
+          events.push(won);
+          // A terminal battle must never retain future or same-tick work.
+          this.splits.clear();
+          this.dueSplitIndices.clear();
+          break;
+        }
+      }
+      this.dueSplitIndices.clear();
+
+      // The logical tick is snapshot state, even on ticks without gameplay events.
+      this.revision += 1;
+      return { tick: this.tick, events };
+    });
+  }
+
+  /** Runs a public state transition with full rollback on exceptional failure. */
+  private runAtomically<T>(operation: () => T): T {
+    // A tick can touch the grid, queue, lifecycle, and counters before a later
+    // neighbour fails. Copy all mutable internals, including hidden queue state.
+    const grid = this.grid.clone((cell) => this.copyCell(cell));
+    const cooldowns = new CooldownTracker(this.cooldowns.toData());
+    const splits = this.splits.clone();
+    const dueSplitIndices = new Set(this.dueSplitIndices);
+    const tick = this.tick;
+    const revision = this.revision;
+    const battleStatus = this.copyStatus(this.battleStatus);
+
+    try {
+      return operation();
+    } catch (error) {
+      // Replacing the private containers avoids rollback code that could itself
+      // validate or fail halfway through restoring a checkpoint.
+      this.grid = grid;
+      this.cooldowns = cooldowns;
+      this.splits = splits;
+      this.dueSplitIndices = dueSplitIndices;
+      this.tick = tick;
+      this.revision = revision;
+      this.battleStatus = battleStatus;
+      throw error;
+    }
   }
 
   private applyIncrement(playerId: PlayerId, position: Position): BattleEvent[] {

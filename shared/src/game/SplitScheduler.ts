@@ -96,6 +96,16 @@ export class SplitScheduler {
     return this.sortedData();
   }
 
+  /** Creates an independent copy, including the next sequence cursor. */
+  clone(): SplitScheduler {
+    const clone = new SplitScheduler(this.toData());
+
+    // Reconstructing from pending entries cannot recover sequence numbers that
+    // were consumed by entries already taken or cancelled.
+    clone.nextSequence = this.nextSequence;
+    return clone;
+  }
+
   private sortedData(): PendingSplit[] {
     return [...this.splitsByPosition.values()]
       .sort(
