@@ -1,0 +1,281 @@
+:root {
+  color: #e8edf7;
+  background: #0c1220;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 18% 4%, #182a49 0, transparent 34rem),
+    #0c1220;
+}
+
+button,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  width: min(72rem, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: clamp(2rem, 5vw, 4.5rem) 0;
+}
+
+.app-header {
+  max-width: 46rem;
+}
+
+.app-header h1 {
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(2.5rem, 7vw, 5.25rem);
+  letter-spacing: -0.055em;
+  line-height: 0.95;
+}
+
+.app-header > p:last-child {
+  max-width: 40rem;
+  color: #aab6cb;
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+.eyebrow {
+  margin: 0 0 0.75rem;
+  color: #78a0ff;
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.demo-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 2rem 0 1rem;
+  padding: 0.8rem;
+  border: 1px solid #29364c;
+  border-radius: 0.8rem;
+  background: #121b2a;
+}
+
+.demo-controls label {
+  color: #aeb9ca;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.demo-controls select,
+.demo-controls button {
+  min-height: 2.5rem;
+  border: 1px solid #3a4a63;
+  border-radius: 0.55rem;
+  color: #f4f7fc;
+  background: #1a2639;
+}
+
+.demo-controls select {
+  padding: 0 2.4rem 0 0.75rem;
+}
+
+.demo-controls button {
+  margin-left: auto;
+  padding: 0 1rem;
+  cursor: pointer;
+}
+
+.demo-controls button:hover {
+  background: #24344d;
+}
+
+.demo-controls select:focus-visible,
+.demo-controls button:focus-visible {
+  outline: 3px solid #8cafff;
+  outline-offset: 2px;
+}
+
+.battle-panel {
+  padding: clamp(1rem, 2.6vw, 1.75rem);
+  border: 1px solid #29364c;
+  border-radius: 1rem;
+  background: rgb(17 26 41 / 92%);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 25%);
+}
+
+.battle-summary,
+.player-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 1rem;
+}
+
+.battle-summary {
+  color: #aab6ca;
+  font-size: 0.82rem;
+}
+
+.battle-summary strong {
+  color: #f7f9fc;
+  font-weight: 700;
+}
+
+.player-legend {
+  margin: 1rem 0;
+}
+
+.player-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: #b3bfd1;
+  font-size: 0.82rem;
+}
+
+.player-legend__item--active {
+  border-color: #526887;
+  color: #ffffff;
+  background: #1b293d;
+}
+
+.player-legend__swatch {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+}
+
+.winner-banner,
+.rejection-banner {
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.6rem;
+}
+
+.winner-banner {
+  color: #b9f4db;
+  background: #153d32;
+}
+
+.rejection-banner {
+  color: #ffd1d7;
+  background: #49232c;
+}
+
+.battle-grid {
+  display: block;
+  width: 100%;
+  max-width: 44rem;
+  max-height: 70vh;
+  margin: 0 auto;
+  filter: drop-shadow(0 0.8rem 1rem rgb(0 0 0 / 22%));
+}
+
+.battle-grid__backdrop {
+  fill: #080d16;
+  rx: 0.18px;
+}
+
+.battle-cell {
+  outline: none;
+}
+
+.battle-cell__surface {
+  fill: #172235;
+  stroke: #2b3a50;
+  stroke-width: 0.035;
+  transition: filter 120ms ease, stroke-width 120ms ease;
+}
+
+.battle-cell--empty .battle-cell__surface {
+  fill: #141f30;
+}
+
+.battle-cell--wall .battle-cell__surface {
+  fill: #293140;
+  stroke: #4b5668;
+}
+
+.battle-cell__wall-mark {
+  fill: none;
+  stroke: #758094;
+  stroke-width: 0.055;
+  stroke-linecap: round;
+}
+
+.battle-cell--interactive {
+  cursor: pointer;
+}
+
+.battle-cell--interactive:hover .battle-cell__surface,
+.battle-cell--interactive:focus-visible .battle-cell__surface {
+  filter: brightness(1.18);
+  stroke: #ffffff;
+  stroke-width: 0.065;
+}
+
+.battle-cell--selected-owner .battle-cell__surface {
+  stroke-width: 0.065;
+}
+
+.battle-cell__count {
+  font-size: 0.43px;
+  font-weight: 800;
+  pointer-events: none;
+  user-select: none;
+}
+
+.battle-cell__pending {
+  fill: #ffffff;
+  stroke: #121b29;
+  stroke-width: 0.025;
+  pointer-events: none;
+}
+
+.battle-help,
+.loading-status {
+  color: #929fb4;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.battle-help {
+  max-width: 44rem;
+  margin: 1rem auto 0;
+}
+
+@media (max-width: 36rem) {
+  .app-shell {
+    width: min(100% - 1rem, 72rem);
+    padding-top: 1.5rem;
+  }
+
+  .demo-controls button {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .battle-panel {
+    padding: 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battle-cell__surface {
+    transition: none;
+  }
+}
