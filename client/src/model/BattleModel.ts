@@ -58,11 +58,19 @@ export class BattleModel {
         });
         break;
       case "commandAccepted":
-      case "battleAdvanced":
         this.publish({
           snapshot: message.snapshot,
           latestEvents: message.events,
           lastRejection: null,
+        });
+        break;
+      case "battleAdvanced":
+        this.publish({
+          snapshot: message.snapshot,
+          latestEvents: message.events,
+          // A clock heartbeat is unrelated to the rejected command. Keep the
+          // feedback visible until the user acts again or state is replaced.
+          lastRejection: this.state.lastRejection,
         });
         break;
       case "commandRejected":

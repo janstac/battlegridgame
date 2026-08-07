@@ -18,6 +18,24 @@ import type {
 /** Logical update frequency used by local demos and the future server. */
 export const LOCAL_BATTLE_TICKS_PER_SECOND = 20;
 
+/** Replaceable interval clock used to schedule deterministic local ticks. */
+export interface LocalBattleClock {
+  /** Registers a repeating callback and returns its opaque timer handle. */
+  setInterval(callback: () => void, intervalMs: number): unknown;
+
+  /** Cancels a handle previously returned by `setInterval`. */
+  clearInterval(handle: unknown): void;
+}
+
+const SYSTEM_LOCAL_BATTLE_CLOCK: LocalBattleClock = {
+  setInterval(callback, intervalMs) {
+    return globalThis.setInterval(callback, intervalMs);
+  },
+  clearInterval(handle) {
+    globalThis.clearInterval(handle as ReturnType<typeof setInterval>);
+  },
+};
+
 /** Options for constructing a browser-local authoritative battle session. */
 export type LocalBattleSessionOptions = Readonly<{
   setup: BattleSetup;
@@ -25,6 +43,8 @@ export type LocalBattleSessionOptions = Readonly<{
   config?: BattleConfig;
   cooldownPolicy?: CooldownPolicy;
   tickIntervalMs?: number;
+  /** Optional clock seam for deterministic hosts and lifecycle tests. */
+  clock?: LocalBattleClock;
 }>;
 
 /**
@@ -39,8 +59,9 @@ export class LocalBattleSession implements BattleSession {
   private readonly config: BattleConfig;
   private readonly cooldownPolicy: CooldownPolicy;
   private readonly tickIntervalMs: number;
+  private readonly clock: LocalBattleClock;
   private listener: BattleSessionListener | null = null;
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private timer: unknown | null = null;
   private disposed = false;
 
   /** Creates a local authority without starting its simulation clock. */
@@ -50,6 +71,7 @@ export class LocalBattleSession implements BattleSession {
       options.cooldownPolicy ?? new FixedCooldownPolicy(10);
     this.tickIntervalMs =
       options.tickIntervalMs ?? 1_000 / LOCAL_BATTLE_TICKS_PER_SECOND;
+    this.clock = options.clock ?? SYSTEM_LOCAL_BATTLE_CLOCK;
     this.assertTickInterval(this.tickIntervalMs);
     if (!options.setup.players.includes(options.playerId)) {
       throw new Error(`Unknown battle player: ${options.playerId}`);
@@ -195,13 +217,16 @@ export class LocalBattleSession implements BattleSession {
 
   private startTimer(): void {
     if (this.timer === null) {
-      this.timer = setInterval(() => this.advance(), this.tickIntervalMs);
+      this.timer = this.clock.setInterval(
+        () => this.advance(),
+        this.tickIntervalMs,
+      );
     }
   }
 
   private stopTimer(): void {
     if (this.timer !== null) {
-      clearInterval(this.timer);
+      this.clock.clearInterval(this.timer);
       this.timer = null;
     }
   }
