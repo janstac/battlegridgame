@@ -1,0 +1,15 @@
+{
+  "name": "@grid-game/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./domain": "./src/domain/index.ts",
+    "./grid": "./src/grid/index.ts",
+    "./game": "./src/game/index.ts",
+    "./protocol": "./src/protocol/index.ts"
+  },
+  "dependencies": {
+    "typebox": "^1.3.11"
+  }
+}

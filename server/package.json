@@ -1,0 +1,8 @@
+{
+  "name": "@grid-game/server",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@grid-game/shared": "*"
+  }
+}
