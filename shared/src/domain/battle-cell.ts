@@ -1,5 +1,6 @@
 import Type from "typebox";
 
+import { SAFE_INTEGER_MAX } from "./coordinate.ts";
 import { PlayerIdSchema } from "./ids.ts";
 
 /** Runtime schema for a traversable, unoccupied battle cell. */
@@ -23,7 +24,7 @@ export const OccupiedCellSchema = Type.Object(
   {
     kind: Type.Literal("occupied"),
     playerId: PlayerIdSchema,
-    count: Type.Integer({ minimum: 1 }),
+    count: Type.Integer({ minimum: 1, maximum: SAFE_INTEGER_MAX }),
   },
   { additionalProperties: false },
 );

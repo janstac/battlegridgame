@@ -3,7 +3,7 @@ import type { PendingSplit, Position } from "../domain/index.ts";
 /** Maintains one delayed split per position in deterministic execution order. */
 export class SplitScheduler {
   private readonly splitsByPosition = new Map<string, PendingSplit>();
-  private nextSequence = 0;
+  private nextSequence: number | null = 0;
 
   /** Restores a split queue and its sequence ordering. */
   constructor(initial: readonly PendingSplit[] = []) {
@@ -20,7 +20,14 @@ export class SplitScheduler {
       sequences.add(split.sequence);
       const copy = this.copySplit(split);
       this.splitsByPosition.set(key, copy);
-      this.nextSequence = Math.max(this.nextSequence, split.sequence + 1);
+      if (split.sequence === Number.MAX_SAFE_INTEGER) {
+        this.nextSequence = null;
+      } else if (
+        this.nextSequence !== null &&
+        split.sequence >= this.nextSequence
+      ) {
+        this.nextSequence = split.sequence + 1;
+      }
     }
   }
 
@@ -45,12 +52,19 @@ export class SplitScheduler {
     if (!Number.isSafeInteger(dueTick) || dueTick < 0) {
       throw new RangeError("Split due tick must be a non-negative safe integer");
     }
+    if (this.nextSequence === null) {
+      throw new RangeError("Pending split sequence space is exhausted");
+    }
     const split: PendingSplit = {
       position: { ...position },
       dueTick,
       sequence: this.nextSequence,
     };
-    this.nextSequence += 1;
+    // MAX_SAFE_INTEGER is a valid final sequence, but no increment beyond it is.
+    this.nextSequence =
+      this.nextSequence === Number.MAX_SAFE_INTEGER
+        ? null
+        : this.nextSequence + 1;
     this.splitsByPosition.set(this.positionKey(position), split);
     return this.copySplit(split);
   }

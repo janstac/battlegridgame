@@ -4,7 +4,9 @@ import test from "node:test";
 import type { BattleEvent, CommandResult } from "../src/game/index.ts";
 import {
   BattleEngine,
+  CooldownTracker,
   FixedCooldownPolicy,
+  SplitScheduler,
 } from "../src/game/index.ts";
 import {
   ALPHA,
@@ -387,4 +389,105 @@ test("snapshots are independent and restore deterministic engine state", () => {
 
   assert.deepEqual(advance(restored, 10), advance(engine, 10));
   assert.deepEqual(restored.getSnapshot(), engine.getSnapshot());
+});
+
+test("engine factories reject malformed runtime data before constructing state", () => {
+  const grid = makeGrid(2, 1, [
+    [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
+    [{ x: 1, y: 0 }, occupied(BETA, 1)],
+  ]);
+  const lavaSetup = {
+    ...makeSetup(grid),
+    grid: {
+      ...grid,
+      cells: [{ kind: "lava" }, grid.cells[1]],
+    },
+  };
+
+  assert.throws(
+    () => BattleEngine.create(
+      lavaSetup as unknown as Parameters<typeof BattleEngine.create>[0],
+      CONFIG,
+      NO_COOLDOWN,
+    ),
+    /Battle setup is invalid/,
+  );
+  assert.throws(
+    () => BattleEngine.restore(
+      {
+        ...makeSnapshot(grid),
+        grid: { ...grid, cells: [grid.cells[0]] },
+      } as Parameters<typeof BattleEngine.restore>[0],
+      CONFIG,
+      NO_COOLDOWN,
+    ),
+    /contains 1 cells; expected 2/,
+  );
+});
+
+test("engine rejects unknown command discriminants at its runtime boundary", () => {
+  const engine = BattleEngine.create(
+    makeSetup(makeGrid(2, 1, [
+      [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
+      [{ x: 1, y: 0 }, occupied(BETA, 1)],
+    ])),
+    CONFIG,
+    NO_COOLDOWN,
+  );
+  const before = engine.getSnapshot();
+
+  assert.throws(
+    () => engine.applyCommand(
+      { playerId: ALPHA },
+      { kind: "lava" } as unknown as Parameters<BattleEngine["applyCommand"]>[1],
+    ),
+    /Unsupported battle command kind: lava/,
+  );
+  assert.deepEqual(engine.getSnapshot(), before);
+});
+
+test("split sequences stop at the safe-integer boundary without overflowing", () => {
+  const finalSequence = Number.MAX_SAFE_INTEGER;
+  const scheduler = new SplitScheduler([{
+    position: { x: 0, y: 0 },
+    dueTick: 1,
+    sequence: finalSequence,
+  }]);
+
+  assert.throws(
+    () => scheduler.schedule({ x: 1, y: 0 }, 2),
+    /sequence space is exhausted/,
+  );
+  assert.deepEqual(scheduler.toData(), [{
+    position: { x: 0, y: 0 },
+    dueTick: 1,
+    sequence: finalSequence,
+  }]);
+
+  const almostExhausted = new SplitScheduler([{
+    position: { x: 0, y: 0 },
+    dueTick: 1,
+    sequence: Number.MAX_SAFE_INTEGER - 1,
+  }]);
+  assert.equal(
+    almostExhausted.schedule({ x: 1, y: 0 }, 2).sequence,
+    Number.MAX_SAFE_INTEGER,
+  );
+  assert.throws(
+    () => almostExhausted.schedule({ x: 2, y: 0 }, 3),
+    /sequence space is exhausted/,
+  );
+});
+
+test("cooldown serialization uses locale-independent code-unit ordering", () => {
+  const tracker = new CooldownTracker([
+    { playerId: "ä", nextActionTick: 1 },
+    { playerId: "z", nextActionTick: 2 },
+    { playerId: "a", nextActionTick: 3 },
+  ]);
+
+  assert.deepEqual(
+    tracker.toData().map(({ playerId }) => playerId),
+    ["a", "z", "ä"],
+  );
 });

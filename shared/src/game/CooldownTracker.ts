@@ -53,7 +53,8 @@ export class CooldownTracker {
   /** Returns deterministic, serializable cooldown state. */
   toData(): PlayerCooldown[] {
     return [...this.nextTicksByPlayer.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
+      // Direct code-unit comparison is stable across runtimes and locales.
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
       .map(([playerId, nextActionTick]) => ({ playerId, nextActionTick }));
   }
 

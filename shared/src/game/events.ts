@@ -3,6 +3,7 @@ import Type from "typebox";
 import {
   PlayerIdSchema,
   PositionSchema,
+  SAFE_INTEGER_MAX,
   TickSchema,
 } from "../domain/index.ts";
 
@@ -12,8 +13,8 @@ export const CellIncrementedEventSchema = Type.Object(
     kind: Type.Literal("cellIncremented"),
     position: PositionSchema,
     playerId: PlayerIdSchema,
-    previousCount: Type.Integer({ minimum: 0 }),
-    nextCount: Type.Integer({ minimum: 1 }),
+    previousCount: Type.Integer({ minimum: 0, maximum: SAFE_INTEGER_MAX }),
+    nextCount: Type.Integer({ minimum: 1, maximum: SAFE_INTEGER_MAX }),
     source: Type.Union([Type.Literal("command"), Type.Literal("split")]),
   },
   { additionalProperties: false },
@@ -26,8 +27,8 @@ export const CellCapturedEventSchema = Type.Object(
     position: PositionSchema,
     playerId: PlayerIdSchema,
     previousPlayerId: Type.Union([PlayerIdSchema, Type.Null()]),
-    previousCount: Type.Integer({ minimum: 0 }),
-    nextCount: Type.Integer({ minimum: 1 }),
+    previousCount: Type.Integer({ minimum: 0, maximum: SAFE_INTEGER_MAX }),
+    nextCount: Type.Integer({ minimum: 1, maximum: SAFE_INTEGER_MAX }),
   },
   { additionalProperties: false },
 );
@@ -38,7 +39,7 @@ export const SplitScheduledEventSchema = Type.Object(
     kind: Type.Literal("splitScheduled"),
     position: PositionSchema,
     dueTick: TickSchema,
-    sequence: Type.Integer({ minimum: 0 }),
+    sequence: Type.Integer({ minimum: 0, maximum: SAFE_INTEGER_MAX }),
   },
   { additionalProperties: false },
 );
@@ -49,7 +50,7 @@ export const CellSplitEventSchema = Type.Object(
     kind: Type.Literal("cellSplit"),
     position: PositionSchema,
     playerId: PlayerIdSchema,
-    count: Type.Integer({ minimum: 1 }),
+    count: Type.Integer({ minimum: 1, maximum: SAFE_INTEGER_MAX }),
   },
   { additionalProperties: false },
 );

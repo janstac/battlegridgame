@@ -1,12 +1,14 @@
-import type {
-  BattleCell,
-  BattleId,
-  BattleSetup,
-  BattleSnapshot,
-  BattleStatus,
-  PendingSplit,
-  PlayerId,
-  Position,
+import {
+  assertValidBattleSetup,
+  assertValidBattleSnapshot,
+  type BattleCell,
+  type BattleId,
+  type BattleSetup,
+  type BattleSnapshot,
+  type BattleStatus,
+  type PendingSplit,
+  type PlayerId,
+  type Position,
 } from "../domain/index.ts";
 import { FixedGrid } from "../grid/index.ts";
 import type { BattleConfig } from "./BattleConfig.ts";
@@ -63,6 +65,7 @@ export class BattleEngine {
     cooldownPolicy: CooldownPolicy,
   ): BattleEngine {
     BattleEngine.assertConfig(config);
+    assertValidBattleSetup(setup);
     const snapshot: BattleSnapshot = {
       battleId: setup.battleId,
       tick: 0,
@@ -93,6 +96,7 @@ export class BattleEngine {
     cooldownPolicy: CooldownPolicy,
   ): BattleEngine {
     BattleEngine.assertConfig(config);
+    assertValidBattleSnapshot(snapshot);
     const engine = new BattleEngine(snapshot, config, cooldownPolicy);
     engine.assertStateIsValid(false);
     return engine;
@@ -132,6 +136,23 @@ export class BattleEngine {
     context: CommandContext,
     command: BattleCommand,
   ): CommandResult {
+    // Keep this boundary exhaustive even when an untyped JavaScript caller
+    // bypasses TypeScript and supplies a future or fabricated discriminant.
+    const commandKind = (command as { kind?: unknown } | null)?.kind;
+    switch (commandKind) {
+      case "incrementCell":
+        return this.applyIncrementCommand(context, command);
+      default:
+        throw new TypeError(
+          `Unsupported battle command kind: ${String(commandKind)}`,
+        );
+    }
+  }
+
+  private applyIncrementCommand(
+    context: CommandContext,
+    command: BattleCommand,
+  ): CommandResult {
     if (this.battleStatus.kind === "finished") {
       return { accepted: false, reason: "battleFinished" };
     }
@@ -152,6 +173,7 @@ export class BattleEngine {
     if (!this.cooldowns.canAct(context.playerId, this.tick)) {
       return { accepted: false, reason: "cooldownActive" };
     }
+    this.assertRevisionCanAdvance();
 
     // Ask the policy before mutation so a bad policy cannot partially apply a command.
     const durationTicks = this.cooldownPolicy.durationTicks({
@@ -189,6 +211,7 @@ export class BattleEngine {
     if (this.tick === Number.MAX_SAFE_INTEGER) {
       throw new RangeError("Battle tick exceeds the safe integer range");
     }
+    this.assertRevisionCanAdvance();
 
     this.tick += 1;
     const events: BattleEvent[] = [];
@@ -434,6 +457,12 @@ export class BattleEngine {
     }
   }
 
+  private assertRevisionCanAdvance(): void {
+    if (this.revision === Number.MAX_SAFE_INTEGER) {
+      throw new RangeError("Battle revision exceeds the safe integer range");
+    }
+  }
+
   private copyCell(cell: BattleCell): BattleCell {
     return BattleEngine.copyCellValue(cell);
   }
@@ -445,7 +474,19 @@ export class BattleEngine {
   }
 
   private static copyCellValue(cell: BattleCell): BattleCell {
-    return cell.kind === "occupied" ? { ...cell } : { kind: cell.kind };
+    // The default remains reachable at runtime when callers bypass schemas.
+    switch (cell.kind) {
+      case "empty":
+        return { kind: "empty" };
+      case "wall":
+        return { kind: "wall" };
+      case "occupied":
+        return { ...cell };
+      default:
+        throw new TypeError(
+          `Unsupported battle cell kind: ${String((cell as { kind?: unknown }).kind)}`,
+        );
+    }
   }
 
   private static assertConfig(config: BattleConfig): void {
