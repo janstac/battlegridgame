@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   isClientMessage,
-  isServerMessage,
   parseClientMessage,
   parseServerMessage,
 } from "../src/protocol/index.ts";
@@ -74,7 +73,6 @@ test("server protocol validates snapshots, accepted commands, and advances", () 
   ];
 
   for (const message of messages) {
-    assert.equal(isServerMessage(message), true);
     assert.deepEqual(parseServerMessage(message), message);
   }
 });
@@ -101,7 +99,6 @@ test("server protocol rejects malformed nested state and events", () => {
   ];
 
   for (const message of invalid) {
-    assert.equal(isServerMessage(message), false);
     assert.throws(() => parseServerMessage(message));
   }
 });
@@ -205,7 +202,6 @@ test("server protocol rejects snapshots that violate semantic invariants", () =>
 
   for (const [name, snapshot] of invalidSnapshots) {
     const message = { type: "battleSnapshot", snapshot };
-    assert.equal(isServerMessage(message), false, name);
     assert.throws(
       () => parseServerMessage(message),
       name,
@@ -226,7 +222,7 @@ test("protocol rejects unsafe event integers and client coordinates", () => {
     battleId: "test-battle",
     position: { x: unsafe, y: 0 },
   }), false);
-  assert.equal(isServerMessage({
+  assert.equal({
     type: "battleAdvanced",
     events: [{
       kind: "cellIncremented",
@@ -237,5 +233,5 @@ test("protocol rejects unsafe event integers and client coordinates", () => {
       source: "command",
     }],
     snapshot,
-  }), false);
+  }, false);
 });

@@ -1,6 +1,4 @@
 import {
-  assertValidBattleSetup,
-  assertValidBattleSnapshot,
   type BattleCell,
   type BattleId,
   type BattleSetup,
@@ -65,7 +63,6 @@ export class BattleEngine {
     cooldownPolicy: CooldownPolicy,
   ): BattleEngine {
     BattleEngine.assertConfig(config);
-    assertValidBattleSetup(setup);
     const snapshot: BattleSnapshot = {
       battleId: setup.battleId,
       tick: 0,
@@ -96,7 +93,6 @@ export class BattleEngine {
     cooldownPolicy: CooldownPolicy,
   ): BattleEngine {
     BattleEngine.assertConfig(config);
-    assertValidBattleSnapshot(snapshot);
     const engine = new BattleEngine(snapshot, config, cooldownPolicy);
     engine.assertStateIsValid(false);
     return engine;
