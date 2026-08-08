@@ -2,8 +2,11 @@ import {
   BattleEngine,
   DEFAULT_BATTLE_CONFIG,
   FixedCooldownPolicy,
+  type BattleEngineSetup,
+  type BattleId,
   type BattleConfig,
   type BattleSetup,
+  type BattleSnapshot,
   type ClientMessage,
   type CooldownPolicy,
   type PlayerId,
@@ -49,12 +52,10 @@ export type LocalBattleSessionOptions = Readonly<{
 
 /**
  * Browser-local authoritative session used by the standalone demo.
- *
- * It deliberately speaks the shared client/server protocol so replacing it
- * with a WebSocket session does not affect the model, controller, or views.
  */
 export class LocalBattleSession implements BattleSession {
   private engine: BattleEngine;
+  private battleId: BattleId;
   private playerId: PlayerId;
   private readonly config: BattleConfig;
   private readonly cooldownPolicy: CooldownPolicy;
@@ -77,8 +78,9 @@ export class LocalBattleSession implements BattleSession {
       throw new Error(`Unknown battle player: ${options.playerId}`);
     }
     this.playerId = options.playerId;
+    this.battleId = options.setup.battleId;
     this.engine = BattleEngine.create(
-      options.setup,
+      this.engineSetup(options.setup),
       this.config,
       this.cooldownPolicy,
     );
@@ -108,7 +110,7 @@ export class LocalBattleSession implements BattleSession {
     this.listener = listener;
     this.emit({
       type: "battleSnapshot",
-      snapshot: this.engine.getSnapshot(),
+      snapshot: this.protocolSnapshot(),
     });
     this.startTimer();
   }
@@ -118,7 +120,7 @@ export class LocalBattleSession implements BattleSession {
     this.assertStarted();
 
     // A future server routes by battle ID; the local session owns exactly one.
-    if (message.battleId !== this.engine.battleId) {
+    if (message.battleId !== this.battleId) {
       throw new Error(`Unknown battle: ${message.battleId}`);
     }
 
@@ -132,7 +134,7 @@ export class LocalBattleSession implements BattleSession {
         type: "commandAccepted",
         requestId: message.requestId,
         events: result.events,
-        snapshot: this.engine.getSnapshot(),
+        snapshot: this.protocolSnapshot(),
       });
       return;
     }
@@ -152,16 +154,17 @@ export class LocalBattleSession implements BattleSession {
       throw new Error(`Unknown battle player: ${playerId}`);
     }
     this.engine = BattleEngine.create(
-      setup,
+      this.engineSetup(setup),
       this.config,
       this.cooldownPolicy,
     );
+    this.battleId = setup.battleId;
     this.playerId = playerId;
 
     if (this.listener !== null) {
       this.emit({
         type: "battleSnapshot",
-        snapshot: this.engine.getSnapshot(),
+        snapshot: this.protocolSnapshot(),
       });
       this.startTimer();
     }
@@ -183,7 +186,7 @@ export class LocalBattleSession implements BattleSession {
     const message: ServerMessage = {
       type: "battleAdvanced",
       events: result.events,
-      snapshot: this.engine.getSnapshot(),
+      snapshot: this.protocolSnapshot(),
     };
     this.emit(message);
     if (this.engine.status.kind === "finished") {
@@ -194,6 +197,14 @@ export class LocalBattleSession implements BattleSession {
 
   private emit(message: ServerMessage): void {
     this.listener?.(message);
+  }
+
+  private engineSetup(setup: BattleSetup): BattleEngineSetup {
+    return { players: setup.players, grid: setup.grid };
+  }
+
+  private protocolSnapshot(): BattleSnapshot {
+    return { battleId: this.battleId, ...this.engine.getSnapshot() };
   }
 
   private assertUsable(): void {

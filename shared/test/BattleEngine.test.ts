@@ -4,9 +4,7 @@ import test from "node:test";
 import type { BattleEvent, CommandResult } from "../src/game/index.ts";
 import {
   BattleEngine,
-  CooldownTracker,
   FixedCooldownPolicy,
-  SplitScheduler,
 } from "../src/game/index.ts";
 import {
   ALPHA,
@@ -410,7 +408,7 @@ test("engine factories reject malformed runtime data before constructing state",
       CONFIG,
       NO_COOLDOWN,
     ),
-    /Battle setup is invalid/,
+    /Unsupported battle cell kind: lava/,
   );
   assert.throws(
     () => BattleEngine.restore(
@@ -422,6 +420,61 @@ test("engine factories reject malformed runtime data before constructing state",
       NO_COOLDOWN,
     ),
     /contains 1 cells; expected 2/,
+  );
+});
+
+test("restore validates cooldown and split state supplied at its boundary", () => {
+  const grid = makeGrid(3, 1, [
+    [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
+    [{ x: 2, y: 0 }, occupied(BETA, 1)],
+  ]);
+  const base = makeSnapshot(grid);
+
+  assert.throws(
+    () => BattleEngine.restore({
+      ...base,
+      cooldowns: [
+        { playerId: ALPHA, nextActionTick: 1 },
+        { playerId: ALPHA, nextActionTick: 2 },
+      ],
+    }, CONFIG, NO_COOLDOWN),
+    /Duplicate cooldown/,
+  );
+  assert.throws(
+    () => BattleEngine.restore({
+      ...base,
+      cooldowns: [{ playerId: "intruder", nextActionTick: 1 }],
+    }, CONFIG, NO_COOLDOWN),
+    /not a participant/,
+  );
+  assert.throws(
+    () => BattleEngine.restore({
+      ...base,
+      pendingSplits: [
+        { position: { x: 0, y: 0 }, dueTick: 1, sequence: 0 },
+        { position: { x: 0, y: 0 }, dueTick: 2, sequence: 1 },
+      ],
+    }, CONFIG, NO_COOLDOWN),
+    /Duplicate pending split at/,
+  );
+  assert.throws(
+    () => BattleEngine.restore({
+      ...base,
+      pendingSplits: [
+        { position: { x: 0, y: 0 }, dueTick: 1, sequence: 0 },
+        { position: { x: 2, y: 0 }, dueTick: 2, sequence: 0 },
+      ],
+    }, CONFIG, NO_COOLDOWN),
+    /Duplicate pending split sequence/,
+  );
+  assert.throws(
+    () => BattleEngine.restore({
+      ...base,
+      pendingSplits: [
+        { position: { x: 3, y: 0 }, dueTick: 1, sequence: 0 },
+      ],
+    }, CONFIG, NO_COOLDOWN),
+    /outside the grid/,
   );
 });
 
@@ -532,46 +585,89 @@ test("rollback restores the split scheduler's hidden next sequence cursor", () =
 
 test("split sequences stop at the safe-integer boundary without overflowing", () => {
   const finalSequence = Number.MAX_SAFE_INTEGER;
-  const scheduler = new SplitScheduler([{
-    position: { x: 0, y: 0 },
-    dueTick: 1,
-    sequence: finalSequence,
-  }]);
+  const exhausted = BattleEngine.restore(
+    {
+      ...makeSnapshot(makeGrid(3, 1, [
+        [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
+        [{ x: 2, y: 0 }, occupied(BETA, 1)],
+      ]), {
+        pendingSplits: [{
+          position: { x: 0, y: 0 },
+          dueTick: 10,
+          sequence: finalSequence,
+        }],
+      }),
+    },
+    CONFIG,
+    NO_COOLDOWN,
+  );
+  const exhaustedBefore = exhausted.getSnapshot();
 
   assert.throws(
-    () => scheduler.schedule({ x: 1, y: 0 }, 2),
+    () => increment(exhausted, BETA, 2, 0),
     /sequence space is exhausted/,
   );
-  assert.deepEqual(scheduler.toData(), [{
-    position: { x: 0, y: 0 },
-    dueTick: 1,
-    sequence: finalSequence,
-  }]);
+  assert.deepEqual(exhausted.getSnapshot(), exhaustedBefore);
 
-  const almostExhausted = new SplitScheduler([{
-    position: { x: 0, y: 0 },
-    dueTick: 1,
-    sequence: Number.MAX_SAFE_INTEGER - 1,
-  }]);
-  assert.equal(
-    almostExhausted.schedule({ x: 1, y: 0 }, 2).sequence,
-    Number.MAX_SAFE_INTEGER,
+  const almostExhausted = BattleEngine.restore(
+    {
+      ...makeSnapshot(makeGrid(4, 1, [
+        [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
+        [{ x: 1, y: 0 }, occupied(ALPHA, 1)],
+        [{ x: 3, y: 0 }, occupied(BETA, 1)],
+      ]), {
+        pendingSplits: [{
+          position: { x: 0, y: 0 },
+          dueTick: 10,
+          sequence: finalSequence - 1,
+        }],
+      }),
+    },
+    CONFIG,
+    NO_COOLDOWN,
   );
+  const scheduled = increment(almostExhausted, ALPHA, 1, 0);
+  assert.equal(eventOfKind(scheduled.events, "splitScheduled").sequence, finalSequence);
   assert.throws(
-    () => almostExhausted.schedule({ x: 2, y: 0 }, 3),
+    () => increment(almostExhausted, BETA, 3, 0),
     /sequence space is exhausted/,
   );
 });
 
-test("cooldown serialization uses locale-independent code-unit ordering", () => {
-  const tracker = new CooldownTracker([
-    { playerId: "ä", nextActionTick: 1 },
-    { playerId: "z", nextActionTick: 2 },
-    { playerId: "a", nextActionTick: 3 },
-  ]);
+test("cooldown serialization follows participant order", () => {
+  const engine = BattleEngine.restore(
+    {
+      ...makeSnapshot(makeGrid(3, 1, [
+        [{ x: 0, y: 0 }, occupied("ä", 1)],
+        [{ x: 2, y: 0 }, occupied("a", 1)],
+      ])),
+      players: ["ä", "z", "a"],
+      cooldowns: [
+        { playerId: "a", nextActionTick: 3 },
+        { playerId: "ä", nextActionTick: 1 },
+        { playerId: "z", nextActionTick: 2 },
+      ],
+    },
+    CONFIG,
+    NO_COOLDOWN,
+  );
 
   assert.deepEqual(
-    tracker.toData().map(({ playerId }) => playerId),
-    ["a", "z", "ä"],
+    engine.getSnapshot().cooldowns.map(({ playerId }) => playerId),
+    ["ä", "z", "a"],
   );
+});
+
+test("engine snapshots contain simulation state without a battle id", () => {
+  const engine = BattleEngine.create(
+    makeSetup(makeGrid(2, 1, [
+      [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
+      [{ x: 1, y: 0 }, occupied(BETA, 1)],
+    ])),
+    CONFIG,
+    NO_COOLDOWN,
+  );
+
+  assert.equal("battleId" in engine.getSnapshot(), false);
+  assert.equal("battleId" in engine, false);
 });

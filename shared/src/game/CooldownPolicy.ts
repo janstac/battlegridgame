@@ -1,15 +1,15 @@
 import type {
-  BattleSnapshot,
   PlayerId,
   Position,
 } from "../domain/index.ts";
+import type { BattleEngineSnapshot } from "./BattleEngine.ts";
 
 /** Inputs available when calculating an accepted command's cooldown. */
 export type CooldownContext = {
   playerId: PlayerId;
   currentTick: number;
   position: Position;
-  snapshot: BattleSnapshot;
+  snapshot: BattleEngineSnapshot;
 };
 
 /** Strategy for determining cooldown duration without coupling it to the engine. */

@@ -1,70 +1,80 @@
 import {
   type BattleCell,
-  type BattleId,
-  type BattleSetup,
-  type BattleSnapshot,
   type BattleStatus,
   type PendingSplit,
+  type PlayerCooldown,
   type PlayerId,
   type Position,
+  type SerializedGrid,
 } from "../domain/index.ts";
 import { FixedGrid } from "../grid/index.ts";
 import type { BattleConfig } from "./BattleConfig.ts";
 import type { BattleCommand, CommandContext } from "./commands.ts";
 import type { CooldownPolicy } from "./CooldownPolicy.ts";
-import { CooldownTracker } from "./CooldownTracker.ts";
 import type {
   BattleEvent,
   CommandResult,
   TickResult,
 } from "./events.ts";
-import { SplitScheduler } from "./SplitScheduler.ts";
+
+export type BattleEngineSetup = {
+  players: PlayerId[];
+  grid: SerializedGrid<BattleCell>;
+};
+
+export type BattleEngineSnapshot = {
+  players: PlayerId[];
+  grid: SerializedGrid<BattleCell>;
+  tick: number;
+  revision: number;
+  status: BattleStatus;
+  cooldowns: PlayerCooldown[];
+  pendingSplits: PendingSplit[];
+};
 
 /** Authoritative deterministic simulation for a single isolated battle. */
 export class BattleEngine {
-  private readonly id: BattleId;
   private readonly playerIds: PlayerId[];
-  private readonly playerIdSet: Set<PlayerId>;
   private grid: FixedGrid<BattleCell>;
   private readonly config: BattleConfig;
   private readonly cooldownPolicy: CooldownPolicy;
-  private cooldowns: CooldownTracker;
-  private splits: SplitScheduler;
+  private cooldownsByPlayer: Map<PlayerId, number>;
+  private splitsByPosition: Map<string, PendingSplit>;
+  private nextSplitSequence: number | null;
   private dueSplitIndices = new Set<number>();
   private tick: number;
   private revision: number;
   private battleStatus: BattleStatus;
 
   private constructor(
-    snapshot: BattleSnapshot,
+    snapshot: BattleEngineSnapshot,
     config: BattleConfig,
     cooldownPolicy: CooldownPolicy,
   ) {
-    this.id = snapshot.battleId;
     this.playerIds = [...snapshot.players];
-    this.playerIdSet = new Set(snapshot.players);
     this.grid = FixedGrid.fromData({
       ...snapshot.grid,
       cells: snapshot.grid.cells.map((cell) => this.copyCell(cell)),
     });
     this.config = { ...config };
     this.cooldownPolicy = cooldownPolicy;
-    this.cooldowns = new CooldownTracker(snapshot.cooldowns);
-    this.splits = new SplitScheduler(snapshot.pendingSplits);
+    this.cooldownsByPlayer = this.restoreCooldowns(snapshot.cooldowns);
+    const splitState = this.restoreSplits(snapshot.pendingSplits);
+    this.splitsByPosition = splitState.splitsByPosition;
+    this.nextSplitSequence = splitState.nextSequence;
     this.tick = snapshot.tick;
     this.revision = snapshot.revision;
     this.battleStatus = this.copyStatus(snapshot.status);
   }
 
-  /** Creates an engine after validating a new battle setup. */
+  /** Creates an engine from battle setup. */
   static create(
-    setup: BattleSetup,
+    setup: BattleEngineSetup,
     config: BattleConfig,
     cooldownPolicy: CooldownPolicy,
   ): BattleEngine {
     BattleEngine.assertConfig(config);
-    const snapshot: BattleSnapshot = {
-      battleId: setup.battleId,
+    const snapshot: BattleEngineSnapshot = {
       tick: 0,
       revision: 0,
       status: { kind: "running" },
@@ -88,7 +98,7 @@ export class BattleEngine {
 
   /** Restores an engine from a complete authoritative snapshot. */
   static restore(
-    snapshot: BattleSnapshot,
+    snapshot: BattleEngineSnapshot,
     config: BattleConfig,
     cooldownPolicy: CooldownPolicy,
   ): BattleEngine {
@@ -96,11 +106,6 @@ export class BattleEngine {
     const engine = new BattleEngine(snapshot, config, cooldownPolicy);
     engine.assertStateIsValid(false);
     return engine;
-  }
-
-  /** Identifier of the simulated battle. */
-  get battleId(): BattleId {
-    return this.id;
   }
 
   /** Current logical simulation tick. */
@@ -114,16 +119,15 @@ export class BattleEngine {
   }
 
   /** Returns an independent plain-data snapshot of authoritative state. */
-  getSnapshot(): BattleSnapshot {
+  getSnapshot(): BattleEngineSnapshot {
     return {
-      battleId: this.id,
       tick: this.tick,
       revision: this.revision,
       status: this.copyStatus(this.battleStatus),
       players: [...this.playerIds],
       grid: this.grid.toData((cell) => this.copyCell(cell)),
-      cooldowns: this.cooldowns.toData(),
-      pendingSplits: this.splits.toData(),
+      cooldowns: this.serializeCooldowns(),
+      pendingSplits: this.serializeSplits(),
     };
   }
 
@@ -154,7 +158,7 @@ export class BattleEngine {
     if (this.battleStatus.kind === "finished") {
       return { accepted: false, reason: "battleFinished" };
     }
-    if (!this.playerIdSet.has(context.playerId)) {
+    if (!this.playerIds.includes(context.playerId)) {
       return { accepted: false, reason: "unknownPlayer" };
     }
     if (!this.grid.contains(command.position)) {
@@ -168,7 +172,7 @@ export class BattleEngine {
     if (cell.playerId !== context.playerId) {
       return { accepted: false, reason: "notOwner" };
     }
-    if (!this.cooldowns.canAct(context.playerId, this.tick)) {
+    if (this.tick < (this.cooldownsByPlayer.get(context.playerId) ?? 0)) {
       return { accepted: false, reason: "cooldownActive" };
     }
     this.assertRevisionCanAdvance();
@@ -187,15 +191,12 @@ export class BattleEngine {
     );
 
     const events = this.applyIncrement(context.playerId, command.position);
-    const cooldown = this.cooldowns.start(
-      context.playerId,
-      this.tick,
-      durationTicks,
-    );
+    const nextActionTick = this.tick + durationTicks;
+    this.cooldownsByPlayer.set(context.playerId, nextActionTick);
     events.push({
       kind: "cooldownStarted",
       playerId: context.playerId,
-      nextActionTick: cooldown.nextActionTick,
+      nextActionTick,
     });
     this.revision += 1;
     return { accepted: true, events };
@@ -214,7 +215,7 @@ export class BattleEngine {
 
       this.tick += 1;
       const events: BattleEvent[] = [];
-      const dueSplits = this.splits.takeDue(this.tick);
+      const dueSplits = this.takeDueSplits();
       for (const pending of dueSplits) {
         this.dueSplitIndices.add(this.grid.indexOf(pending.position));
       }
@@ -228,7 +229,7 @@ export class BattleEngine {
         if (won !== undefined) {
           events.push(won);
           // A terminal battle must never retain future or same-tick work.
-          this.splits.clear();
+          this.splitsByPosition.clear();
           this.dueSplitIndices.clear();
           break;
         }
@@ -246,8 +247,11 @@ export class BattleEngine {
     // A tick can touch the grid, queue, lifecycle, and counters before a later
     // neighbour fails. Copy all mutable internals, including hidden queue state.
     const grid = this.grid.clone((cell) => this.copyCell(cell));
-    const cooldowns = new CooldownTracker(this.cooldowns.toData());
-    const splits = this.splits.clone();
+    const cooldownsByPlayer = new Map(this.cooldownsByPlayer);
+    const splitsByPosition = new Map(
+      [...this.splitsByPosition].map(([key, split]) => [key, this.copySplit(split)]),
+    );
+    const nextSplitSequence = this.nextSplitSequence;
     const dueSplitIndices = new Set(this.dueSplitIndices);
     const tick = this.tick;
     const revision = this.revision;
@@ -259,8 +263,9 @@ export class BattleEngine {
       // Replacing the private containers avoids rollback code that could itself
       // validate or fail halfway through restoring a checkpoint.
       this.grid = grid;
-      this.cooldowns = cooldowns;
-      this.splits = splits;
+      this.cooldownsByPlayer = cooldownsByPlayer;
+      this.splitsByPosition = splitsByPosition;
+      this.nextSplitSequence = nextSplitSequence;
       this.dueSplitIndices = dueSplitIndices;
       this.tick = tick;
       this.revision = revision;
@@ -370,7 +375,7 @@ export class BattleEngine {
     if (
       cell.kind !== "occupied" ||
       cell.count < this.thresholdAt(position) ||
-      this.splits.has(position) ||
+      this.splitsByPosition.has(this.positionKey(position)) ||
       this.dueSplitIndices.has(this.grid.indexOf(position))
     ) {
       return undefined;
@@ -379,7 +384,19 @@ export class BattleEngine {
     if (!Number.isSafeInteger(dueTick)) {
       throw new RangeError("Split due tick exceeds the safe integer range");
     }
-    const split = this.splits.schedule(position, dueTick);
+    if (this.nextSplitSequence === null) {
+      throw new RangeError("Pending split sequence space is exhausted");
+    }
+    const split: PendingSplit = {
+      position: { ...position },
+      dueTick,
+      sequence: this.nextSplitSequence,
+    };
+    this.nextSplitSequence =
+      this.nextSplitSequence === Number.MAX_SAFE_INTEGER
+        ? null
+        : this.nextSplitSequence + 1;
+    this.splitsByPosition.set(this.positionKey(position), split);
     return {
       kind: "splitScheduled",
       position: { ...position },
@@ -392,6 +409,97 @@ export class BattleEngine {
     return this.grid
       .orthogonalNeighbours(position)
       .filter((neighbour) => this.grid.get(neighbour).kind !== "wall").length;
+  }
+
+  private restoreCooldowns(
+    cooldowns: readonly PlayerCooldown[],
+  ): Map<PlayerId, number> {
+    const restored = new Map<PlayerId, number>();
+    for (const cooldown of cooldowns) {
+      if (!this.playerIds.includes(cooldown.playerId)) {
+        throw new Error(`Cooldown player ${cooldown.playerId} is not a participant`);
+      }
+      if (restored.has(cooldown.playerId)) {
+        throw new Error(`Duplicate cooldown for player ${cooldown.playerId}`);
+      }
+      BattleEngine.assertNonNegativeInteger(
+        cooldown.nextActionTick,
+        "Next action tick",
+      );
+      restored.set(cooldown.playerId, cooldown.nextActionTick);
+    }
+    return restored;
+  }
+
+  private serializeCooldowns(): PlayerCooldown[] {
+    const cooldowns: PlayerCooldown[] = [];
+    for (const playerId of this.playerIds) {
+      const nextActionTick = this.cooldownsByPlayer.get(playerId);
+      if (nextActionTick !== undefined) {
+        cooldowns.push({ playerId, nextActionTick });
+      }
+    }
+    return cooldowns;
+  }
+
+  private restoreSplits(splits: readonly PendingSplit[]): {
+    splitsByPosition: Map<string, PendingSplit>;
+    nextSequence: number | null;
+  } {
+    const splitsByPosition = new Map<string, PendingSplit>();
+    const sequences = new Set<number>();
+    let nextSequence: number | null = 0;
+
+    for (const split of splits) {
+      BattleEngine.assertNonNegativeInteger(split.position.x, "Split position x");
+      BattleEngine.assertNonNegativeInteger(split.position.y, "Split position y");
+      BattleEngine.assertNonNegativeInteger(split.dueTick, "Split due tick");
+      BattleEngine.assertNonNegativeInteger(split.sequence, "Pending split sequence");
+
+      const key = this.positionKey(split.position);
+      if (splitsByPosition.has(key)) {
+        throw new Error(`Duplicate pending split at ${key}`);
+      }
+      if (sequences.has(split.sequence)) {
+        throw new Error(`Duplicate pending split sequence ${split.sequence}`);
+      }
+      sequences.add(split.sequence);
+      splitsByPosition.set(key, this.copySplit(split));
+      if (split.sequence === Number.MAX_SAFE_INTEGER) {
+        nextSequence = null;
+      } else if (nextSequence !== null && split.sequence >= nextSequence) {
+        nextSequence = split.sequence + 1;
+      }
+    }
+
+    return { splitsByPosition, nextSequence };
+  }
+
+  private takeDueSplits(): PendingSplit[] {
+    const due = this.serializeSplits().filter(
+      (split) => split.dueTick <= this.tick,
+    );
+    for (const split of due) {
+      this.splitsByPosition.delete(this.positionKey(split.position));
+    }
+    return due;
+  }
+
+  private serializeSplits(): PendingSplit[] {
+    return [...this.splitsByPosition.values()]
+      .sort(
+        (left, right) =>
+          left.dueTick - right.dueTick || left.sequence - right.sequence,
+      )
+      .map((split) => this.copySplit(split));
+  }
+
+  private positionKey(position: Position): string {
+    return `${position.x},${position.y}`;
+  }
+
+  private copySplit(split: PendingSplit): PendingSplit {
+    return { ...split, position: { ...split.position } };
   }
 
   private finishIfWon(): BattleEvent | undefined {
@@ -417,12 +525,9 @@ export class BattleEngine {
   private assertStateIsValid(isNewBattle: boolean): void {
     BattleEngine.assertNonNegativeInteger(this.tick, "Battle tick");
     BattleEngine.assertNonNegativeInteger(this.revision, "Battle revision");
-    if (this.id.length === 0) {
-      throw new Error("Battle id must not be empty");
-    }
     if (
       this.playerIds.length < 2 ||
-      this.playerIdSet.size !== this.playerIds.length
+      new Set(this.playerIds).size !== this.playerIds.length
     ) {
       throw new Error("A battle requires at least two unique players");
     }
@@ -432,7 +537,7 @@ export class BattleEngine {
 
     for (const [position, cell] of this.grid.entries()) {
       if (cell.kind === "occupied") {
-        if (!this.playerIdSet.has(cell.playerId)) {
+        if (!this.playerIds.includes(cell.playerId)) {
           throw new Error(`Cell owner ${cell.playerId} is not a participant`);
         }
         this.assertCount(cell.count);
@@ -444,12 +549,7 @@ export class BattleEngine {
       }
     }
 
-    for (const cooldown of this.cooldowns.toData()) {
-      if (!this.playerIdSet.has(cooldown.playerId)) {
-        throw new Error(`Cooldown player ${cooldown.playerId} is not a participant`);
-      }
-    }
-    for (const split of this.splits.toData()) {
+    for (const split of this.serializeSplits()) {
       if (!this.grid.contains(split.position)) {
         throw new Error("Pending split position is outside the grid");
       }
@@ -473,7 +573,7 @@ export class BattleEngine {
     }
     if (
       this.battleStatus.kind === "finished" &&
-      this.splits.toData().length > 0
+      this.splitsByPosition.size > 0
     ) {
       throw new Error("Finished battle cannot contain pending splits");
     }

@@ -73,7 +73,14 @@ test("active-player switching controls the identity used for commands", () => {
   assert.equal(accepted?.type, "commandAccepted");
   if (accepted?.type === "commandAccepted") {
     assert.equal(accepted.requestId, "alpha-command");
+    assert.equal(accepted.snapshot.battleId, "client-test");
   }
+  assert.throws(() => session.send({
+    type: "incrementCell",
+    requestId: "wrong-battle",
+    battleId: "other-battle",
+    position: { x: 0, y: 0 },
+  }), /Unknown battle/);
   assert.throws(() => session.setActivePlayer("unknown"), /Unknown battle player/);
   session.dispose();
 });

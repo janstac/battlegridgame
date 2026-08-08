@@ -103,7 +103,7 @@ test("server protocol rejects malformed nested state and events", () => {
   }
 });
 
-test("server protocol rejects snapshots that violate semantic invariants", () => {
+test("server protocol leaves semantic snapshot validation to the authority", () => {
   const base = makeSnapshot(makeGrid(2, 1, [
     [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
     [{ x: 1, y: 0 }, occupied(BETA, 1)],
@@ -202,10 +202,11 @@ test("server protocol rejects snapshots that violate semantic invariants", () =>
 
   for (const [name, snapshot] of invalidSnapshots) {
     const message = { type: "battleSnapshot", snapshot };
-    assert.throws(
-      () => parseServerMessage(message),
-      name,
-    );
+    if (name === "duplicate players" || name === "unsafe tick") {
+      assert.throws(() => parseServerMessage(message), name);
+    } else {
+      assert.deepEqual(parseServerMessage(message), message, name);
+    }
   }
 });
 
@@ -222,16 +223,16 @@ test("protocol rejects unsafe event integers and client coordinates", () => {
     battleId: "test-battle",
     position: { x: unsafe, y: 0 },
   }), false);
-  assert.equal({
-    type: "battleAdvanced",
-    events: [{
-      kind: "cellIncremented",
-      position: { x: 0, y: 0 },
-      playerId: ALPHA,
-      previousCount: 1,
-      nextCount: unsafe,
-      source: "command",
-    }],
-    snapshot,
-  }, false);
+  assert.throws(() => parseServerMessage({
+      type: "battleAdvanced",
+      events: [{
+        kind: "cellIncremented",
+        position: { x: 0, y: 0 },
+        playerId: ALPHA,
+        previousCount: 1,
+        nextCount: unsafe,
+        source: "command",
+      }],
+      snapshot,
+    }));
 });
