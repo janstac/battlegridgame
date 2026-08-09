@@ -1,8 +1,7 @@
-import type { PlayerId, Position } from "@grid-game/shared";
-import { useEffect, useRef, useState } from "react";
+import type { PlayerId } from "@grid-game/shared";
+import { useEffect, useReducer, useRef, useState } from "react";
 
 import {
-  createDemoBattle,
   createDemoRuntime,
   DEMO_PLAYERS,
   DemoControls,
@@ -13,35 +12,50 @@ import { BattleView } from "./view/index.ts";
 /** Root composition for the standalone local battle demo. */
 export function App() {
   const [runtime, setRuntime] = useState<DemoRuntime | null>(null);
-  const [selectedPlayerId, setSelectedPlayerId] = useState<PlayerId>(
-    DEMO_PLAYERS[0],
-  );
-  const selectedPlayerIdRef = useRef(selectedPlayerId);
-  selectedPlayerIdRef.current = selectedPlayerId;
+  const runtimeRef = useRef<DemoRuntime | null>(null);
+  const runtimeGeneration = useRef(0);
+  const [, refreshControls] = useReducer((value: number) => value + 1, 0);
 
   useEffect(() => {
-    // Effects can be cleaned up and replayed without a new render in StrictMode.
-    // Constructing here ensures a disposed session is never started a second time.
-    const nextRuntime = createDemoRuntime();
-    nextRuntime.session.setActivePlayer(selectedPlayerIdRef.current);
-    nextRuntime.controller.start();
-    setRuntime(nextRuntime);
-
-    // The controller owns the session timer, so one cleanup releases both.
-    return () => nextRuntime.controller.dispose();
+    const generation = ++runtimeGeneration.current;
+    void createDemoRuntime().then((nextRuntime) => {
+      if (generation !== runtimeGeneration.current) {
+        void nextRuntime.battle.dispose();
+        return;
+      }
+      runtimeRef.current = nextRuntime;
+      setRuntime(nextRuntime);
+    });
+    return () => {
+      runtimeGeneration.current += 1;
+      const current = runtimeRef.current;
+      runtimeRef.current = null;
+      if (current !== null) void current.battle.dispose();
+    };
   }, []);
 
   const selectPlayer = (playerId: PlayerId) => {
-    runtime?.session.setActivePlayer(playerId);
-    setSelectedPlayerId(playerId);
+    runtime?.battle.setLocalPlayerId(playerId);
+    // The identity still lives exclusively in ClientBattleState; this refreshes
+    // the demo-only selector which sits outside BattleView's subscription.
+    refreshControls();
   };
 
   const reset = () => {
-    runtime?.session.reset(createDemoBattle(), selectedPlayerId);
-  };
-
-  const activateCell = (position: Position) => {
-    runtime?.controller.incrementCell(position);
+    if (runtime === null) return;
+    const localPlayerId = runtime.battle.localPlayerId;
+    const generation = ++runtimeGeneration.current;
+    runtimeRef.current = null;
+    setRuntime(null);
+    void runtime.battle.dispose().then(async () => {
+      const nextRuntime = await createDemoRuntime(localPlayerId);
+      if (generation !== runtimeGeneration.current) {
+        await nextRuntime.battle.dispose();
+        return;
+      }
+      runtimeRef.current = nextRuntime;
+      setRuntime(nextRuntime);
+    });
   };
 
   return (
@@ -50,25 +64,21 @@ export function App() {
         <p className="eyebrow">Client-only simulation</p>
         <h1>Grid Battle</h1>
         <p>
-          This demo uses the same model, controller, and protocol boundary as a
-          networked client. Its replaceable local session is the authority.
+          This demo uses the same asynchronous message boundary as a networked
+          client. Its replaceable local connection is the authority.
         </p>
       </header>
 
       <DemoControls
         players={DEMO_PLAYERS}
-        selectedPlayerId={selectedPlayerId}
+        selectedPlayerId={runtime?.battle.localPlayerId ?? DEMO_PLAYERS[0]}
         onSelectPlayer={selectPlayer}
         onReset={reset}
       />
       {runtime === null ? (
         <p className="loading-status">Starting local battle…</p>
       ) : (
-        <BattleView
-          model={runtime.model}
-          selectedPlayerId={selectedPlayerId}
-          onCellActivate={activateCell}
-        />
+        <BattleView battle={runtime.battle} />
       )}
     </main>
   );

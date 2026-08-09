@@ -1,4 +1,5 @@
 export * from "./battle-cell.ts";
+export * from "./battle-config.ts";
 export * from "./battle-state.ts";
 export * from "./coordinate.ts";
 export * from "./grid.ts";

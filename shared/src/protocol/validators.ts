@@ -31,5 +31,5 @@ export function parseClientMessage(value: unknown): ClientMessage {
 
 /** Validates and returns a server message, throwing on invalid input. */
 export function parseServerMessage(value: unknown): ServerMessage {
-    return StructuralServerMessageValidator.Parse(value);
+  return StructuralServerMessageValidator.Parse(value);
 }

@@ -12,7 +12,7 @@ export type BattleCellViewProps = Readonly<{
   cell: BattleCell;
   position: Position;
   players: readonly PlayerId[];
-  selectedPlayerId: PlayerId;
+  localPlayerId: PlayerId;
   pendingDueTick?: number;
   disabled: boolean;
   onActivate(position: Position): void;
@@ -43,7 +43,7 @@ export function BattleCellView({
   cell,
   position,
   players,
-  selectedPlayerId,
+  localPlayerId,
   pendingDueTick,
   disabled,
   onActivate,
@@ -52,11 +52,11 @@ export function BattleCellView({
     cell.kind === "occupied"
       ? colorsForPlayer(cell.playerId, players)
       : undefined;
-  const ownedBySelected =
-    cell.kind === "occupied" && cell.playerId === selectedPlayerId;
+  const ownedByLocalPlayer =
+    cell.kind === "occupied" && cell.playerId === localPlayerId;
   // This only suppresses impossible UI intents. The authoritative session still
   // validates ownership because state can change between rendering and input.
-  const canActivate = !disabled && ownedBySelected;
+  const canActivate = !disabled && ownedByLocalPlayer;
   const label = cellLabel(cell, position, pendingDueTick);
 
   const activate = () => {
@@ -75,7 +75,7 @@ export function BattleCellView({
   const classNames = [
     "battle-cell",
     `battle-cell--${cell.kind}`,
-    ownedBySelected ? "battle-cell--selected-owner" : "",
+    ownedByLocalPlayer ? "battle-cell--selected-owner" : "",
     canActivate ? "battle-cell--interactive" : "",
   ]
     .filter(Boolean)

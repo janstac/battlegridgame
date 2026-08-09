@@ -51,9 +51,8 @@ export function makeGrid(
 /** Builds a valid two-player battle setup around supplied grid data. */
 export function makeSetup(
   grid: SerializedGrid<BattleCell>,
-  battleId = "test-battle",
 ): BattleSetup {
-  return { battleId, players: [ALPHA, BETA], grid };
+  return { players: [ALPHA, BETA], grid };
 }
 
 /** Builds a restorable running snapshot with explicit queued splits. */
@@ -62,14 +61,13 @@ export function makeSnapshot(
   options: Partial<
     Pick<
       BattleSnapshot,
-      "battleId" | "tick" | "revision" | "status" | "cooldowns" | "pendingSplits"
+      "config" | "tick" | "status" | "cooldowns" | "pendingSplits"
     >
   > = {},
 ): BattleSnapshot {
   return {
-    battleId: options.battleId ?? "test-battle",
+    config: options.config ?? { ticksPerSecond: 20, splitDelayTicks: 10 },
     tick: options.tick ?? 0,
-    revision: options.revision ?? 0,
     status: options.status ?? { kind: "running" },
     players: [ALPHA, BETA],
     grid,

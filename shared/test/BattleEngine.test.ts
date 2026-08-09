@@ -18,7 +18,7 @@ import {
   wall,
 } from "./helpers.ts";
 
-const CONFIG = { splitDelayTicks: 10 } as const;
+const CONFIG = { ticksPerSecond: 20, splitDelayTicks: 10 } as const;
 const NO_COOLDOWN = new FixedCooldownPolicy(0);
 
 /** Applies an increment command and narrows the result to an accepted command. */
@@ -134,7 +134,7 @@ test("split threshold reflects corner, edge, interior, and adjacent-wall topolog
       makeSetup(makeGrid(5, 5, [
         ...overrides,
         ...scenario.walls.map((position) => [position, wall()] as const),
-      ]), `threshold-${scenario.name}`),
+      ])),
       CONFIG,
       NO_COOLDOWN,
     );
@@ -149,13 +149,13 @@ test("split threshold reflects corner, edge, interior, and adjacent-wall topolog
 });
 
 test("cooldowns are isolated by player and by battle", () => {
-  const setup = (battleId: string) => makeSetup(makeGrid(4, 2, [
+  const setup = () => makeSetup(makeGrid(4, 2, [
     [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
     [{ x: 1, y: 0 }, occupied(ALPHA, 1)],
     [{ x: 3, y: 1 }, occupied(BETA, 1)],
-  ]), battleId);
-  const first = BattleEngine.create(setup("first"), CONFIG, new FixedCooldownPolicy(5));
-  const second = BattleEngine.create(setup("second"), CONFIG, new FixedCooldownPolicy(5));
+  ]));
+  const first = BattleEngine.create(setup(), CONFIG, new FixedCooldownPolicy(5));
+  const second = BattleEngine.create(setup(), CONFIG, new FixedCooldownPolicy(5));
 
   increment(first, ALPHA, 0, 0);
   assert.deepEqual(
@@ -257,7 +257,6 @@ test("same-tick pending splits resolve by sequence and use current ownership", (
         { position: { x: 1, y: 0 }, dueTick: 1, sequence: 1 },
       ],
     }),
-    CONFIG,
     NO_COOLDOWN,
   );
 
@@ -285,7 +284,6 @@ test("a pending split captured on an earlier tick resolves for its new owner", (
         { position: { x: 1, y: 0 }, dueTick: 2, sequence: 1 },
       ],
     }),
-    CONFIG,
     NO_COOLDOWN,
   );
 
@@ -336,7 +334,6 @@ test("victory stops remaining same-tick splits and clears queued work", () => {
         { position: { x: 3, y: 0 }, dueTick: 1, sequence: 1 },
       ],
     }),
-    CONFIG,
     NO_COOLDOWN,
   );
 
@@ -374,7 +371,7 @@ test("snapshots are independent and restore deterministic engine state", () => {
   increment(engine, ALPHA, 1, 1);
 
   const restorable = engine.getSnapshot();
-  const restored = BattleEngine.restore(restorable, CONFIG, new FixedCooldownPolicy(3));
+  const restored = BattleEngine.restore(restorable, new FixedCooldownPolicy(3));
   assert.deepEqual(restored.getSnapshot(), restorable);
 
   // Mutating caller-owned snapshot data must not mutate either engine.
@@ -416,7 +413,6 @@ test("engine factories reject malformed runtime data before constructing state",
         ...makeSnapshot(grid),
         grid: { ...grid, cells: [grid.cells[0]] },
       } as Parameters<typeof BattleEngine.restore>[0],
-      CONFIG,
       NO_COOLDOWN,
     ),
     /contains 1 cells; expected 2/,
@@ -437,14 +433,14 @@ test("restore validates cooldown and split state supplied at its boundary", () =
         { playerId: ALPHA, nextActionTick: 1 },
         { playerId: ALPHA, nextActionTick: 2 },
       ],
-    }, CONFIG, NO_COOLDOWN),
+    }, NO_COOLDOWN),
     /Duplicate cooldown/,
   );
   assert.throws(
     () => BattleEngine.restore({
       ...base,
       cooldowns: [{ playerId: "intruder", nextActionTick: 1 }],
-    }, CONFIG, NO_COOLDOWN),
+    }, NO_COOLDOWN),
     /not a participant/,
   );
   assert.throws(
@@ -454,7 +450,7 @@ test("restore validates cooldown and split state supplied at its boundary", () =
         { position: { x: 0, y: 0 }, dueTick: 1, sequence: 0 },
         { position: { x: 0, y: 0 }, dueTick: 2, sequence: 1 },
       ],
-    }, CONFIG, NO_COOLDOWN),
+    }, NO_COOLDOWN),
     /Duplicate pending split at/,
   );
   assert.throws(
@@ -464,7 +460,7 @@ test("restore validates cooldown and split state supplied at its boundary", () =
         { position: { x: 0, y: 0 }, dueTick: 1, sequence: 0 },
         { position: { x: 2, y: 0 }, dueTick: 2, sequence: 0 },
       ],
-    }, CONFIG, NO_COOLDOWN),
+    }, NO_COOLDOWN),
     /Duplicate pending split sequence/,
   );
   assert.throws(
@@ -473,7 +469,7 @@ test("restore validates cooldown and split state supplied at its boundary", () =
       pendingSplits: [
         { position: { x: 3, y: 0 }, dueTick: 1, sequence: 0 },
       ],
-    }, CONFIG, NO_COOLDOWN),
+    }, NO_COOLDOWN),
     /outside the grid/,
   );
 });
@@ -506,10 +502,8 @@ test("an overflowing direct increment preserves the complete engine state", () =
       [{ x: 2, y: 0 }, occupied(BETA, 1)],
     ]), {
       tick: 7,
-      revision: 11,
       cooldowns: [{ playerId: BETA, nextActionTick: 7 }],
     }),
-    CONFIG,
     NO_COOLDOWN,
   );
   const before = engine.getSnapshot();
@@ -533,13 +527,11 @@ test("a split overflow rolls back its removed queue entry and emptied source", (
       [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
       [{ x: 1, y: 0 }, occupied(BETA, Number.MAX_SAFE_INTEGER)],
     ]), {
-      revision: 4,
       cooldowns: [{ playerId: ALPHA, nextActionTick: 0 }],
       pendingSplits: [
         { position: { x: 0, y: 0 }, dueTick: 1, sequence: 8 },
       ],
     }),
-    CONFIG,
     NO_COOLDOWN,
   );
   const before = engine.getSnapshot();
@@ -565,7 +557,6 @@ test("rollback restores the split scheduler's hidden next sequence cursor", () =
         sequence: finalSequence - 1,
       }],
     }),
-    CONFIG,
     NO_COOLDOWN,
   );
   const before = engine.getSnapshot();
@@ -598,7 +589,6 @@ test("split sequences stop at the safe-integer boundary without overflowing", ()
         }],
       }),
     },
-    CONFIG,
     NO_COOLDOWN,
   );
   const exhaustedBefore = exhausted.getSnapshot();
@@ -623,7 +613,6 @@ test("split sequences stop at the safe-integer boundary without overflowing", ()
         }],
       }),
     },
-    CONFIG,
     NO_COOLDOWN,
   );
   const scheduled = increment(almostExhausted, ALPHA, 1, 0);
@@ -648,7 +637,6 @@ test("cooldown serialization follows participant order", () => {
         { playerId: "z", nextActionTick: 2 },
       ],
     },
-    CONFIG,
     NO_COOLDOWN,
   );
 

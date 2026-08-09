@@ -1,26 +1,26 @@
-import { FixedCooldownPolicy } from "@grid-game/shared";
+import {
+  DEFAULT_BATTLE_CONFIG,
+  FixedCooldownPolicy,
+  type PlayerId,
+} from "@grid-game/shared";
 
-import { BattleController } from "../controller/index.ts";
-import { BattleModel } from "../model/index.ts";
-import { LocalBattleSession } from "../session/index.ts";
+import { ClientBattleState } from "../model/index.ts";
+import { LocalBattleEngineConnection } from "../session/index.ts";
 import { createDemoBattle, DEMO_PLAYERS } from "./createDemoBattle.ts";
 
-/** Long-lived objects composing the local MVC demo. */
 export type DemoRuntime = Readonly<{
-  model: BattleModel;
-  controller: BattleController;
-  session: LocalBattleSession;
+  battle: ClientBattleState;
 }>;
 
-/** Constructs a fresh local authority and its transport-neutral MVC adapters. */
-export function createDemoRuntime(): DemoRuntime {
-  const model = new BattleModel();
-  const session = new LocalBattleSession({
+/** Constructs the local authority through the same async boundary as a server. */
+export async function createDemoRuntime(
+  localPlayerId: PlayerId = DEMO_PLAYERS[0],
+): Promise<DemoRuntime> {
+  const connection = await LocalBattleEngineConnection.connect({
     setup: createDemoBattle(),
-    playerId: DEMO_PLAYERS[0],
+    config: DEFAULT_BATTLE_CONFIG,
     // Half a second at 20 Hz keeps feedback visible without slowing the demo.
     cooldownPolicy: new FixedCooldownPolicy(10),
   });
-  const controller = new BattleController(model, session);
-  return { model, controller, session };
+  return { battle: new ClientBattleState(connection, localPlayerId) };
 }

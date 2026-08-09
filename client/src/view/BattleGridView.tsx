@@ -9,7 +9,8 @@ import { BattleCellView } from "./BattleCellView.tsx";
 /** Rendering inputs for the authoritative SVG battle grid. */
 export type BattleGridViewProps = Readonly<{
   snapshot: BattleSnapshot;
-  selectedPlayerId: PlayerId;
+  localPlayerId: PlayerId;
+  localPlayerOnCooldown: boolean;
   onCellActivate(position: Position): void;
 }>;
 
@@ -20,7 +21,8 @@ function positionKey(position: Position): string {
 /** Renders the current authoritative grid as a responsive SVG. */
 export function BattleGridView({
   snapshot,
-  selectedPlayerId,
+  localPlayerId,
+  localPlayerOnCooldown,
   onCellActivate,
 }: BattleGridViewProps) {
   const { width, height, cells } = snapshot.grid;
@@ -62,11 +64,13 @@ export function BattleGridView({
                 cell={cell}
                 position={position}
                 players={snapshot.players}
-                selectedPlayerId={selectedPlayerId}
+                localPlayerId={localPlayerId}
                 {...(pendingByPosition.has(key)
                   ? { pendingDueTick: pendingByPosition.get(key)! }
                   : {})}
-                disabled={snapshot.status.kind === "finished"}
+                disabled={
+                  snapshot.status.kind === "finished" || localPlayerOnCooldown
+                }
                 onActivate={onCellActivate}
               />
             );

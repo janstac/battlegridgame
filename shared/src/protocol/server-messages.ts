@@ -1,62 +1,131 @@
 import Type from "typebox";
 
 import {
-  BattleIdSchema,
   BattleSnapshotSchema,
+  BattleStatusSchema,
+  BattleCellSchema,
+  OccupiedCellSchema,
+  PendingSplitSchema,
+  PlayerCooldownSchema,
+  PositionSchema,
   RequestIdSchema,
+  TickSchema,
 } from "../domain/index.ts";
-import {
-  BattleEventSchema,
-  CommandRejectionReasonSchema,
-} from "../game/events.ts";
+import { CommandRejectionReasonSchema } from "../game/events.ts";
 
-/** Runtime schema for initial or replacement authoritative state. */
+/** Complete state used only for initialization. */
 export const BattleSnapshotMessageSchema = Type.Object(
+  { type: Type.Literal("battleSnapshot"), snapshot: BattleSnapshotSchema },
+  { additionalProperties: false },
+);
+
+export const CellIncrementedMessageSchema = Type.Object(
   {
-    type: Type.Literal("battleSnapshot"),
-    snapshot: BattleSnapshotSchema,
+    type: Type.Literal("cellIncremented"),
+    tick: TickSchema,
+    position: PositionSchema,
+    cell: OccupiedCellSchema,
+    source: Type.Union([Type.Literal("command"), Type.Literal("split")]),
   },
   { additionalProperties: false },
 );
 
-/** Runtime schema acknowledging an accepted client command. */
-export const CommandAcceptedMessageSchema = Type.Object(
+export const CellCapturedMessageSchema = Type.Object(
   {
-    type: Type.Literal("commandAccepted"),
-    requestId: RequestIdSchema,
-    events: Type.Array(BattleEventSchema),
-    snapshot: BattleSnapshotSchema,
+    type: Type.Literal("cellCaptured"),
+    tick: TickSchema,
+    position: PositionSchema,
+    cell: OccupiedCellSchema,
   },
   { additionalProperties: false },
 );
 
-/** Runtime schema rejecting a client command without changing state. */
+export const SplitScheduledMessageSchema = Type.Object(
+  {
+    type: Type.Literal("splitScheduled"),
+    tick: TickSchema,
+    split: PendingSplitSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const CellSplitMessageSchema = Type.Object(
+  {
+    type: Type.Literal("cellSplit"),
+    tick: TickSchema,
+    position: PositionSchema,
+    cell: BattleCellSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const CooldownChangedMessageSchema = Type.Object(
+  {
+    type: Type.Literal("cooldownChanged"),
+    tick: TickSchema,
+    cooldown: PlayerCooldownSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const BattleStatusChangedMessageSchema = Type.Object(
+  {
+    type: Type.Literal("battleStatusChanged"),
+    tick: TickSchema,
+    status: BattleStatusSchema,
+  },
+  { additionalProperties: false },
+);
+
+/** Authoritative removal of all scheduled work, normally on battle completion. */
+export const PendingSplitsClearedMessageSchema = Type.Object(
+  {
+    type: Type.Literal("pendingSplitsCleared"),
+    tick: TickSchema,
+  },
+  { additionalProperties: false },
+);
+
 export const CommandRejectedMessageSchema = Type.Object(
   {
     type: Type.Literal("commandRejected"),
     requestId: RequestIdSchema,
-    battleId: BattleIdSchema,
     reason: CommandRejectionReasonSchema,
   },
   { additionalProperties: false },
 );
 
-/** Runtime schema for state changed by a logical simulation tick. */
-export const BattleAdvancedMessageSchema = Type.Object(
+export const TickProbeResultMessageSchema = Type.Object(
   {
-    type: Type.Literal("battleAdvanced"),
-    events: Type.Array(BattleEventSchema),
-    snapshot: BattleSnapshotSchema,
+    type: Type.Literal("tickProbeResult"),
+    probeId: RequestIdSchema,
+    tick: TickSchema,
   },
   { additionalProperties: false },
 );
 
-/** Runtime schema for all authoritative session-to-client messages. */
-export const ServerMessageSchema = Type.Union([
+export const BattleStateMessageSchema = Type.Union([
   BattleSnapshotMessageSchema,
-  CommandAcceptedMessageSchema,
-  CommandRejectedMessageSchema,
-  BattleAdvancedMessageSchema,
+  CellIncrementedMessageSchema,
+  CellCapturedMessageSchema,
+  SplitScheduledMessageSchema,
+  CellSplitMessageSchema,
+  CooldownChangedMessageSchema,
+  BattleStatusChangedMessageSchema,
+  PendingSplitsClearedMessageSchema,
 ]);
-/** Validated authoritative message emitted by a local or network session. */
+export type BattleStateMessage = Type.Static<typeof BattleStateMessageSchema>;
+
+export type CommandRejectedMessage = Type.Static<
+  typeof CommandRejectedMessageSchema
+>;
+export type TickProbeResultMessage = Type.Static<
+  typeof TickProbeResultMessageSchema
+>;
+
+export const ServerMessageSchema = Type.Union([
+  BattleStateMessageSchema,
+  CommandRejectedMessageSchema,
+  TickProbeResultMessageSchema,
+]);
 export type ServerMessage = Type.Static<typeof ServerMessageSchema>;

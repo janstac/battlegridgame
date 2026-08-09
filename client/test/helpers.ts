@@ -5,129 +5,84 @@ import type {
   ClientMessage,
   ServerMessage,
 } from "@grid-game/shared";
+import type { ClientBattleClock } from "../src/model/index.ts";
+import type { BattleEngineConnection } from "../src/session/index.ts";
 
-import type { LocalBattleClock } from "../src/session/LocalBattleSession.ts";
-import type {
-  BattleSession,
-  BattleSessionListener,
-} from "../src/session/BattleSession.ts";
-
-/** First participant used by client lifecycle fixtures. */
 export const ALPHA = "Alpha";
-
-/** Second participant used by client lifecycle fixtures. */
 export const BETA = "Beta";
 
-/** Creates a small valid battle with one cell owned by each fixture player. */
-export function createBattleSetup(battleId = "client-test"): BattleSetup {
+export function createBattleSetup(): BattleSetup {
   const cells: BattleCell[] = Array.from(
     { length: 6 },
     (): BattleCell => ({ kind: "empty" }),
   );
   cells[0] = { kind: "occupied", playerId: ALPHA, count: 1 };
   cells[5] = { kind: "occupied", playerId: BETA, count: 1 };
-  return {
-    battleId,
-    players: [ALPHA, BETA],
-    grid: { width: 3, height: 2, cells },
-  };
+  return { players: [ALPHA, BETA], grid: { width: 3, height: 2, cells } };
 }
 
-/** Creates an authoritative snapshot suitable for model and controller tests. */
-export function createBattleSnapshot(
-  battleId = "client-test",
-  tick = 0,
-): BattleSnapshot {
-  const setup = createBattleSetup(battleId);
+export function createBattleSnapshot(tick = 0): BattleSnapshot {
+  const setup = createBattleSetup();
   return {
-    battleId,
+    config: { ticksPerSecond: 20, splitDelayTicks: 10 },
     tick,
-    revision: tick,
     status: { kind: "running" },
     players: [...setup.players],
-    grid: {
-      ...setup.grid,
-      cells: setup.grid.cells.map((cell) => ({ ...cell })),
-    },
+    grid: { ...setup.grid, cells: setup.grid.cells.map((cell) => ({ ...cell })) },
     cooldowns: [],
     pendingSplits: [],
   };
 }
 
-/** Deterministic interval clock whose callbacks advance only when requested. */
-export class ManualBattleClock implements LocalBattleClock {
+export class ManualBattleClock implements ClientBattleClock {
   private readonly callbacks = new Map<number, () => void>();
   private nextHandle = 0;
+  private currentTime = 0;
   private clearedCount = 0;
 
-  /** Number of interval callbacks currently registered. */
-  get activeTimerCount(): number {
-    return this.callbacks.size;
-  }
-
-  /** Number of active interval handles successfully cancelled. */
-  get clearCount(): number {
-    return this.clearedCount;
-  }
-
-  /** Registers an interval callback without starting real time. */
+  get activeTimerCount(): number { return this.callbacks.size; }
+  get clearCount(): number { return this.clearedCount; }
+  now(): number { return this.currentTime; }
   setInterval(callback: () => void, _intervalMs: number): unknown {
     const handle = this.nextHandle++;
     this.callbacks.set(handle, callback);
     return handle;
   }
-
-  /** Removes a registered callback from the manual clock. */
   clearInterval(handle: unknown): void {
     if (typeof handle === "number" && this.callbacks.delete(handle)) {
       this.clearedCount += 1;
     }
   }
-
-  /** Executes every active interval callback for a number of logical turns. */
-  runTicks(count = 1): void {
+  runTicks(count = 1, elapsedMs = 50): void {
     for (let tick = 0; tick < count; tick += 1) {
-      // Snapshotting matches interval scheduling: mutations affect later turns.
-      for (const callback of [...this.callbacks.values()]) {
-        callback();
-      }
+      this.currentTime += elapsedMs;
+      for (const callback of [...this.callbacks.values()]) callback();
     }
   }
 }
 
-/** In-memory session double recording controller lifecycle and commands. */
-export class RecordingBattleSession implements BattleSession {
+export class RecordingBattleEngineConnection implements BattleEngineConnection {
   readonly sent: ClientMessage[] = [];
-  disposeCount = 0;
-  private listener: BattleSessionListener | null = null;
-  private readonly initialMessage: ServerMessage | null;
+  readonly initialSnapshot: BattleSnapshot;
+  closeCount = 0;
+  private readonly listeners = new Set<(message: ServerMessage) => void>();
 
-  /** Creates a session that may synchronously publish an initial message. */
-  constructor(initialMessage: ServerMessage | null = null) {
-    this.initialMessage = initialMessage;
+  constructor(snapshot = createBattleSnapshot()) {
+    this.initialSnapshot = snapshot;
   }
-
-  /** Connects a listener and publishes the configured initial message. */
-  start(listener: BattleSessionListener): void {
-    this.listener = listener;
-    if (this.initialMessage !== null) {
-      listener(this.initialMessage);
-    }
+  subscribe(listener: (message: ServerMessage) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
-
-  /** Records a command sent by the controller. */
-  send(message: ClientMessage): void {
+  async send(message: ClientMessage): Promise<void> {
+    await Promise.resolve();
     this.sent.push(message);
   }
-
-  /** Records disposal and disconnects authoritative output. */
-  dispose(): void {
-    this.disposeCount += 1;
-    this.listener = null;
+  async close(): Promise<void> {
+    this.closeCount += 1;
+    this.listeners.clear();
   }
-
-  /** Publishes an authoritative message to the connected controller. */
   emit(message: ServerMessage): void {
-    this.listener?.(message);
+    for (const listener of [...this.listeners]) listener(message);
   }
 }

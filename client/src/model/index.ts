@@ -1,1 +1,1 @@
-export * from "./BattleModel.ts";
+export * from "./ClientBattleState.ts";

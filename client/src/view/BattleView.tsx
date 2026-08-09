@@ -1,15 +1,10 @@
-import type { PlayerId, Position } from "@grid-game/shared";
-
-import type { BattleModel } from "../model/index.ts";
+import type { ClientBattleState } from "../model/index.ts";
 import { BattleGridView } from "./BattleGridView.tsx";
 import { colorsForPlayer } from "./player-colors.ts";
-import { useBattleModel } from "./useBattleModel.ts";
+import { useClientBattleState } from "./useClientBattleState.ts";
 
-/** Inputs connecting the model and controller intent to the battle view. */
 export type BattleViewProps = Readonly<{
-  model: BattleModel;
-  selectedPlayerId: PlayerId;
-  onCellActivate(position: Position): void;
+  battle: ClientBattleState;
 }>;
 
 const REJECTION_LABELS = {
@@ -21,39 +16,33 @@ const REJECTION_LABELS = {
   cooldownActive: "That player is still cooling down.",
 } as const;
 
-/** Renders battle status, player legend, feedback, and the SVG grid. */
-export function BattleView({
-  model,
-  selectedPlayerId,
-  onCellActivate,
-}: BattleViewProps) {
-  const state = useBattleModel(model);
-  const snapshot = state.snapshot;
-
-  if (snapshot === null) {
-    return <p className="loading-status">Starting local battle…</p>;
-  }
-
+/** Renders directly from the client-owned authoritative state projection. */
+export function BattleView({ battle }: BattleViewProps) {
+  const state = useClientBattleState(battle);
+  const snapshot = state.battle;
   const cooldown = snapshot.cooldowns.find(
-    (entry) => entry.playerId === selectedPlayerId,
+    (entry) => entry.playerId === state.localPlayerId,
   );
   const cooldownTicks = Math.max(
     0,
-    (cooldown?.nextActionTick ?? 0) - snapshot.tick,
+    (cooldown?.nextActionTick ?? 0) - state.estimatedTick,
   );
-  const winner =
-    snapshot.status.kind === "finished" ? snapshot.status.winnerId : null;
+  const localPlayerOnCooldown = cooldownTicks > 0;
+  const winner = snapshot.status.kind === "finished"
+    ? snapshot.status.winnerId
+    : null;
 
   return (
     <section className="battle-panel" aria-label="Battle">
       <div className="battle-summary">
-        <span>Tick <strong>{snapshot.tick}</strong></span>
-        <span>Revision <strong>{snapshot.revision}</strong></span>
+        <span>Tick <strong>{state.estimatedTick}</strong></span>
         <span>
           Pending splits <strong>{snapshot.pendingSplits.length}</strong>
         </span>
         <span>
-          Cooldown <strong>{cooldownTicks === 0 ? "ready" : `${cooldownTicks} ticks`}</strong>
+          Cooldown <strong>{
+            cooldownTicks === 0 ? "ready" : `${cooldownTicks} ticks`
+          }</strong>
         </span>
       </div>
 
@@ -63,7 +52,7 @@ export function BattleView({
           return (
             <span
               className={
-                playerId === selectedPlayerId
+                playerId === state.localPlayerId
                   ? "player-legend__item player-legend__item--active"
                   : "player-legend__item"
               }
@@ -93,8 +82,11 @@ export function BattleView({
 
       <BattleGridView
         snapshot={snapshot}
-        selectedPlayerId={selectedPlayerId}
-        onCellActivate={onCellActivate}
+        localPlayerId={state.localPlayerId}
+        localPlayerOnCooldown={localPlayerOnCooldown}
+        onCellActivate={(position) => {
+          void battle.increment(position);
+        }}
       />
       <p className="battle-help">
         Select a player, then activate one of their numbered cells. A dot marks

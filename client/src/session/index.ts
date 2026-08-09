@@ -1,2 +1,2 @@
-export * from "./BattleSession.ts";
-export * from "./LocalBattleSession.ts";
+export * from "./BattleEngineConnection.ts";
+export * from "./LocalBattleEngineConnection.ts";

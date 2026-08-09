@@ -32,7 +32,6 @@ export function createDemoBattle(): BattleSetup {
   cells[index(3, 4)] = { kind: "occupied", playerId: "Gold", count: 2 };
 
   return {
-    battleId: "local-demo",
     players: [...DEMO_PLAYERS],
     grid: { width, height, cells },
   };
