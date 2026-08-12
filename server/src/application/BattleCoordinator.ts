@@ -6,7 +6,10 @@ import type {
 import type { ClientConnection } from "./ClientConnection.ts";
 import type { PlayerDirectory } from "./PlayerDirectory.ts";
 import type { BattleRegistry } from "../game/BattleRegistry.ts";
-import type { DebugBattleFactory } from "../game/DebugBattleFactory.ts";
+import {
+  MAX_DEBUG_PLAYERS,
+  type DebugBattleFactory,
+} from "../game/DebugBattleFactory.ts";
 
 export type BattleCoordinatorOptions = Readonly<{
   debugEnabled: boolean;
@@ -31,7 +34,10 @@ export class BattleCoordinator {
     this.battles = battles;
     this.factory = factory;
     this.debugEnabled = options.debugEnabled;
-    this.maxDebugPlayers = options.maxDebugPlayers ?? 8;
+    this.maxDebugPlayers = Math.min(
+      options.maxDebugPlayers ?? MAX_DEBUG_PLAYERS,
+      MAX_DEBUG_PLAYERS,
+    );
   }
 
   connectedPlayerIds(): readonly PlayerId[] { return this.players.playerIds(); }
