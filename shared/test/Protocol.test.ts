@@ -5,6 +5,9 @@ import {
   BattleState,
   applyBattleServerMessage,
   isClientMessage,
+  battleEventToServerMessages,
+  parseNetworkClientMessage,
+  parseNetworkServerMessage,
   parseClientMessage,
   parseServerMessage,
 } from "../src/index.ts";
@@ -22,6 +25,38 @@ test("client protocol is battle-local and supports increments and probes", () =>
   assert.deepEqual(parseClientMessage(increment), increment);
   assert.deepEqual(parseClientMessage(probe), probe);
   assert.equal(isClientMessage({ ...increment, battleId: "old-id" }), false);
+});
+
+test("network protocol multiplexes battle-local messages without contaminating snapshots", () => {
+  const routed = {
+    type: "battleMessage",
+    battleId: "battle-1",
+    message: { type: "tickProbe", probeId: "probe-1" },
+  };
+  assert.deepEqual(parseNetworkClientMessage(routed), routed);
+  assert.deepEqual(parseNetworkClientMessage({
+    type: "debugGetPlayerIds", requestId: "players-1",
+  }), { type: "debugGetPlayerIds", requestId: "players-1" });
+  assert.deepEqual(parseNetworkServerMessage({
+    type: "connected", playerId: "player-1",
+  }), { type: "connected", playerId: "player-1" });
+  assert.throws(() => parseNetworkClientMessage({ ...routed, extra: true }));
+});
+
+test("engine events map to ordered server facts including victory cleanup", () => {
+  assert.deepEqual(battleEventToServerMessages({
+    kind: "battleWon", winnerId: ALPHA,
+  }, 12), [
+    { type: "pendingSplitsCleared", tick: 12 },
+    { type: "battleStatusChanged", tick: 12, status: { kind: "finished", winnerId: ALPHA } },
+  ]);
+  assert.deepEqual(battleEventToServerMessages({
+    kind: "cellIncremented", position: { x: 1, y: 2 }, playerId: ALPHA,
+    previousCount: 1, nextCount: 2, source: "command",
+  }, 3), [{
+    type: "cellIncremented", tick: 3, position: { x: 1, y: 2 },
+    cell: { kind: "occupied", playerId: ALPHA, count: 2 }, source: "command",
+  }]);
 });
 
 test("server protocol validates individual authoritative facts", () => {

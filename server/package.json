@@ -2,7 +2,15 @@
   "name": "@grid-game/server",
   "private": true,
   "type": "module",
+  "scripts": {
+    "start": "node src/main.ts",
+    "test": "node --test test/*.test.ts"
+  },
   "dependencies": {
-    "@grid-game/shared": "*"
+    "@grid-game/shared": "*",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
   }
 }

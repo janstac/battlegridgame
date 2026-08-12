@@ -8,10 +8,18 @@ import {
   ServerMessageSchema,
   type ServerMessage,
 } from "./server-messages.ts";
+import {
+  NetworkClientMessageSchema,
+  NetworkServerMessageSchema,
+  type NetworkClientMessage,
+  type NetworkServerMessage,
+} from "./network-messages.ts";
 
 /** Compiled validator for untrusted client messages. */
 export const ClientMessageValidator = Schema.Compile(ClientMessageSchema);
 export const ServerMessageValidator = Schema.Compile(ServerMessageSchema);
+export const NetworkClientMessageValidator = Schema.Compile(NetworkClientMessageSchema);
+export const NetworkServerMessageValidator = Schema.Compile(NetworkServerMessageSchema);
 const StructuralServerMessageValidator = Schema.Compile(ServerMessageSchema);
 
 /** Narrows an unknown value after validating the complete client schema. */
@@ -32,4 +40,12 @@ export function parseClientMessage(value: unknown): ClientMessage {
 /** Validates and returns a server message, throwing on invalid input. */
 export function parseServerMessage(value: unknown): ServerMessage {
   return StructuralServerMessageValidator.Parse(value);
+}
+
+export function parseNetworkClientMessage(value: unknown): NetworkClientMessage {
+  return NetworkClientMessageValidator.Parse(value);
+}
+
+export function parseNetworkServerMessage(value: unknown): NetworkServerMessage {
+  return NetworkServerMessageValidator.Parse(value);
 }

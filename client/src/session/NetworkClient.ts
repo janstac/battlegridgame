@@ -1,0 +1,248 @@
+import {
+  parseNetworkServerMessage,
+  type BattleId,
+  type ClientMessage,
+  type NetworkClientMessage,
+  type NetworkServerMessage,
+  type PlayerId,
+  type RequestId,
+} from "@grid-game/shared";
+import { NetworkBattleSession } from "./NetworkBattleSession.ts";
+
+export interface NetworkWebSocket {
+  readonly readyState: number;
+  addEventListener(type: "message", listener: (event: MessageEvent<unknown>) => void): void;
+  addEventListener(type: "close", listener: () => void): void;
+  addEventListener(type: "error", listener: () => void): void;
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+}
+
+export type NetworkClientEvent =
+  | { type: "battleJoined"; session: NetworkBattleSession }
+  | { type: "battleLeft"; battleId: BattleId };
+
+export type NetworkClientOptions = Readonly<{
+  webSocketFactory?: (url: string) => NetworkWebSocket;
+  requestIdFactory?: () => RequestId;
+}>;
+
+type PendingPlayers = { resolve(value: readonly PlayerId[]): void; reject(error: Error): void };
+type PendingBattle = { resolve(value: NetworkBattleSession): void; reject(error: Error): void };
+
+
+/** Owns one multiplexed socket and all remote battle sessions on it. */
+export class NetworkClient {
+  readonly playerId: PlayerId;
+  private readonly socket: NetworkWebSocket;
+  private readonly requestIdFactory: () => RequestId;
+  private readonly sessions = new Map<BattleId, NetworkBattleSession>();
+  private readonly listeners = new Set<(event: NetworkClientEvent) => void>();
+  private readonly playerRequests = new Map<RequestId, PendingPlayers>();
+  private readonly battleRequests = new Map<RequestId, PendingBattle>();
+  private readonly leaveRequests = new Map<BattleId, () => void>();
+  private closed = false;
+
+  private constructor(
+    socket: NetworkWebSocket,
+    playerId: PlayerId,
+    requestIdFactory: () => RequestId,
+  ) {
+    this.socket = socket;
+    this.playerId = playerId;
+    this.requestIdFactory = requestIdFactory;
+  }
+
+  static async connect(url: string, options: NetworkClientOptions = {}): Promise<NetworkClient> {
+    const factory: (target: string) => NetworkWebSocket = options.webSocketFactory
+      ?? ((target) => new WebSocket(target));
+    const socket = factory(url);
+    let sequence = 0;
+    const requestIdFactory = options.requestIdFactory ?? (() => `${sequence++}`);
+    return await new Promise<NetworkClient>((resolve, reject) => {
+      let client: NetworkClient | null = null;
+      let settled = false;
+      socket.addEventListener("message", (event) => {
+        try {
+          if (typeof event.data !== "string") throw new TypeError("Expected a text WebSocket message");
+          const message = parseNetworkServerMessage(JSON.parse(event.data));
+          if (client === null) {
+            if (message.type !== "connected") throw new Error("First server message must be connected");
+            client = new NetworkClient(socket, message.playerId, requestIdFactory);
+            settled = true;
+            resolve(client);
+            return;
+          }
+          client.receive(message);
+        } catch (error) {
+          socket.close(1008, "invalid server message");
+          if (!settled) reject(error);
+        }
+      });
+      socket.addEventListener("error", () => {
+        if (!settled) reject(new Error("WebSocket connection failed"));
+        client?.terminate(new Error("WebSocket connection failed"));
+      });
+      socket.addEventListener("close", () => {
+        if (!settled) reject(new Error("WebSocket closed before connecting"));
+        client?.terminate(new Error("WebSocket closed"));
+      });
+    });
+  }
+
+  readonly subscribe = (listener: (event: NetworkClientEvent) => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  getSession(battleId: BattleId): NetworkBattleSession | undefined {
+    return this.sessions.get(battleId);
+  }
+
+  async debugGetPlayerIds(): Promise<readonly PlayerId[]> {
+    this.assertOpen();
+    const requestId = this.requestIdFactory();
+    const result = new Promise<readonly PlayerId[]>((resolve, reject) => {
+      this.playerRequests.set(requestId, { resolve, reject });
+    });
+    try {
+      this.send({ type: "debugGetPlayerIds", requestId });
+    } catch (error) {
+      this.playerRequests.delete(requestId);
+      throw error;
+    }
+    return await result;
+  }
+
+  async debugCreateBattle(playerIds: readonly PlayerId[]): Promise<NetworkBattleSession> {
+    this.assertOpen();
+    const requestId = this.requestIdFactory();
+    const result = new Promise<NetworkBattleSession>((resolve, reject) => {
+      this.battleRequests.set(requestId, { resolve, reject });
+    });
+    try {
+      this.send({ type: "debugCreateBattle", requestId, playerIds: [...playerIds] });
+    } catch (error) {
+      this.battleRequests.delete(requestId);
+      throw error;
+    }
+    return await result;
+  }
+
+  async sendBattleMessage(battleId: BattleId, message: ClientMessage): Promise<void> {
+    this.assertOpen();
+    if (!this.sessions.has(battleId)) throw new Error(`Not joined to battle: ${battleId}`);
+    this.send({ type: "battleMessage", battleId, message });
+  }
+
+  async leaveBattle(battleId: BattleId): Promise<void> {
+    this.assertOpen();
+    if (!this.sessions.has(battleId)) return;
+    const existing = this.leaveRequests.get(battleId);
+    if (existing !== undefined) return await new Promise<void>((resolve) => {
+      const prior = existing;
+      this.leaveRequests.set(battleId, () => { prior(); resolve(); });
+    });
+    const result = new Promise<void>((resolve) => this.leaveRequests.set(battleId, resolve));
+    try {
+      this.send({ type: "leaveBattle", battleId });
+    } catch (error) {
+      this.leaveRequests.delete(battleId);
+      throw error;
+    }
+    await result;
+  }
+
+  async close(): Promise<void> {
+    if (this.closed) return;
+    this.terminate(new Error("NetworkClient closed"));
+    this.socket.close(1000, "client closed");
+  }
+
+  private receive(message: NetworkServerMessage): void {
+    if (this.closed) return;
+    switch (message.type) {
+      case "connected":
+        this.socket.close(1008, "duplicate connected message");
+        return;
+      case "debugPlayerIds": {
+        const pending = this.playerRequests.get(message.requestId);
+        if (pending === undefined) return;
+        this.playerRequests.delete(message.requestId);
+        pending.resolve([...message.playerIds]);
+        return;
+      }
+      case "debugGetPlayerIdsRejected": {
+        const pending = this.playerRequests.get(message.requestId);
+        if (pending === undefined) return;
+        this.playerRequests.delete(message.requestId);
+        pending.reject(new Error(message.reason));
+        return;
+      }
+      case "debugCreateBattleRejected": {
+        const pending = this.battleRequests.get(message.requestId);
+        if (pending === undefined) return;
+        this.battleRequests.delete(message.requestId);
+        pending.reject(new Error(message.reason));
+        return;
+      }
+      case "battleJoined": {
+        if (message.playerId !== this.playerId || this.sessions.has(message.battleId)) {
+          this.socket.close(1008, "invalid battle membership");
+          return;
+        }
+        const session = new NetworkBattleSession(this, message.battleId, message.playerId, message.snapshot);
+        this.sessions.set(message.battleId, session);
+        if (message.createRequestId !== null) {
+          const pending = this.battleRequests.get(message.createRequestId);
+          if (pending !== undefined) {
+            this.battleRequests.delete(message.createRequestId);
+            pending.resolve(session);
+          }
+        }
+        this.publish({ type: "battleJoined", session });
+        return;
+      }
+      case "battleLeft": {
+        const session = this.sessions.get(message.battleId);
+        if (session === undefined) return;
+        this.sessions.delete(message.battleId);
+        session.terminate();
+        this.leaveRequests.get(message.battleId)?.();
+        this.leaveRequests.delete(message.battleId);
+        this.publish({ type: "battleLeft", battleId: message.battleId });
+        return;
+      }
+      case "battleMessage":
+        this.sessions.get(message.battleId)?.receive(message.message);
+        return;
+    }
+  }
+
+  private send(message: NetworkClientMessage): void {
+    if (this.socket.readyState !== 1) throw new Error("WebSocket is not open");
+    this.socket.send(JSON.stringify(message));
+  }
+
+  private publish(event: NetworkClientEvent): void {
+    for (const listener of [...this.listeners]) listener(event);
+  }
+
+  private terminate(error: Error): void {
+    if (this.closed) return;
+    this.closed = true;
+    for (const session of this.sessions.values()) session.terminate();
+    this.sessions.clear();
+    for (const pending of this.playerRequests.values()) pending.reject(error);
+    for (const pending of this.battleRequests.values()) pending.reject(error);
+    for (const resolve of this.leaveRequests.values()) resolve();
+    this.playerRequests.clear();
+    this.battleRequests.clear();
+    this.leaveRequests.clear();
+    this.listeners.clear();
+  }
+
+  private assertOpen(): void {
+    if (this.closed) throw new Error("NetworkClient has been closed");
+  }
+}

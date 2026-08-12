@@ -1,10 +1,10 @@
 import {
   BattleEngine,
+  battleEventToServerMessages,
   DEFAULT_BATTLE_CONFIG,
   FixedCooldownPolicy,
   type BattleConfig,
   type BattleEvent,
-  type BattleStateMessage,
   type BattleSetup,
   type BattleSnapshot,
   type ClientMessage,
@@ -141,70 +141,7 @@ export class LocalBattleEngineConnection implements BattleEngineConnection {
   }
 
   private emitEvent(event: BattleEvent, tick: number): void {
-    if (event.kind === "battleWon") {
-      this.emit({ type: "pendingSplitsCleared", tick });
-    }
-    this.emit(this.messageForEvent(event, tick));
-  }
-
-  private messageForEvent(event: BattleEvent, tick: number): BattleStateMessage {
-    switch (event.kind) {
-      case "cellIncremented":
-        return {
-          type: "cellIncremented",
-          tick,
-          position: { ...event.position },
-          cell: {
-            kind: "occupied",
-            playerId: event.playerId,
-            count: event.nextCount,
-          },
-          source: event.source,
-        };
-      case "cellCaptured":
-        return {
-          type: "cellCaptured",
-          tick,
-          position: { ...event.position },
-          cell: {
-            kind: "occupied",
-            playerId: event.playerId,
-            count: event.nextCount,
-          },
-        };
-      case "splitScheduled":
-        return {
-          type: "splitScheduled",
-          tick,
-          split: {
-            position: { ...event.position },
-            dueTick: event.dueTick,
-            sequence: event.sequence,
-          },
-        };
-      case "cellSplit":
-        return {
-          type: "cellSplit",
-          tick,
-          position: { ...event.position },
-          cell: { kind: "empty" },
-        };
-      case "cooldownStarted":
-        return {
-          type: "cooldownChanged",
-          tick,
-          cooldown: {
-            playerId: event.playerId,
-            nextActionTick: event.nextActionTick,
-          },
-        };
-      case "battleWon":
-        return {
-          type: "battleStatusChanged",
-          tick,
-          status: { kind: "finished", winnerId: event.winnerId },
-        };
-    }
+    for (const message of battleEventToServerMessages(event, tick)) this.emit(message);
   }
 
   private emit(message: ServerMessage): void {
