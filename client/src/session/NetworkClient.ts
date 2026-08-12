@@ -8,6 +8,7 @@ import {
   type RequestId,
 } from "@grid-game/shared";
 import { NetworkBattleSession } from "./NetworkBattleSession.ts";
+import { NetworkWorldSession } from "./NetworkWorldSession.ts";
 
 export interface NetworkWebSocket {
   readonly readyState: number;
@@ -39,6 +40,7 @@ type PendingBattle = { resolve(value: NetworkBattleSession): void; reject(error:
 /** Owns one multiplexed socket and all remote battle sessions on it. */
 export class NetworkClient {
   readonly playerId: PlayerId;
+  readonly world: NetworkWorldSession;
   private readonly socket: NetworkWebSocket;
   private readonly requestIdFactory: () => RequestId;
   private readonly sessions = new Map<BattleId, NetworkBattleSession>();
@@ -56,6 +58,7 @@ export class NetworkClient {
     this.socket = socket;
     this.playerId = playerId;
     this.requestIdFactory = requestIdFactory;
+    this.world = new NetworkWorldSession(this);
   }
 
   static async connect(url: string, options: NetworkClientOptions = {}): Promise<NetworkClient> {
@@ -104,6 +107,10 @@ export class NetworkClient {
     return this.sessions.get(battleId);
   }
 
+  getSessions(): readonly NetworkBattleSession[] {
+    return [...this.sessions.values()];
+  }
+
   async debugGetPlayerIds(): Promise<readonly PlayerId[]> {
     this.assertOpen();
     const requestId = this.requestIdFactory();
@@ -111,7 +118,7 @@ export class NetworkClient {
       this.playerRequests.set(requestId, { resolve, reject });
     });
     try {
-      this.send({ type: "debugGetPlayerIds", requestId });
+      this.sendNetworkMessage({ type: "debugGetPlayerIds", requestId });
     } catch (error) {
       this.playerRequests.delete(requestId);
       throw error;
@@ -126,7 +133,7 @@ export class NetworkClient {
       this.battleRequests.set(requestId, { resolve, reject });
     });
     try {
-      this.send({ type: "debugCreateBattle", requestId, playerIds: [...playerIds] });
+      this.sendNetworkMessage({ type: "debugCreateBattle", requestId, playerIds: [...playerIds] });
     } catch (error) {
       this.battleRequests.delete(requestId);
       throw error;
@@ -137,7 +144,7 @@ export class NetworkClient {
   async sendBattleMessage(battleId: BattleId, message: ClientMessage): Promise<void> {
     this.assertOpen();
     if (!this.sessions.has(battleId)) throw new Error(`Not joined to battle: ${battleId}`);
-    this.send({ type: "battleMessage", battleId, message });
+    this.sendNetworkMessage({ type: "battleMessage", battleId, message });
   }
 
   async leaveBattle(battleId: BattleId): Promise<void> {
@@ -150,7 +157,7 @@ export class NetworkClient {
     });
     const result = new Promise<void>((resolve) => this.leaveRequests.set(battleId, resolve));
     try {
-      this.send({ type: "leaveBattle", battleId });
+      this.sendNetworkMessage({ type: "leaveBattle", battleId });
     } catch (error) {
       this.leaveRequests.delete(battleId);
       throw error;
@@ -195,11 +202,21 @@ export class NetworkClient {
         return;
       }
       case "battleJoined": {
-        if (message.playerId !== this.playerId || this.sessions.has(message.battleId)) {
+        const localRosterEntry = message.roster.find(
+          ({ participantId }) => participantId === message.localParticipantId,
+        );
+        if (localRosterEntry?.playerId !== this.playerId || this.sessions.has(message.battleId)) {
           this.socket.close(1008, "invalid battle membership");
           return;
         }
-        const session = new NetworkBattleSession(this, message.battleId, message.playerId, message.snapshot);
+        const session = new NetworkBattleSession(
+          this,
+          message.battleId,
+          message.localParticipantId,
+          message.roster,
+          message.worldPosition,
+          message.snapshot,
+        );
         this.sessions.set(message.battleId, session);
         if (message.createRequestId !== null) {
           const pending = this.battleRequests.get(message.createRequestId);
@@ -224,12 +241,35 @@ export class NetworkClient {
       case "battleMessage":
         this.sessions.get(message.battleId)?.receive(message.message);
         return;
+      case "worldSnapshot":
+        this.world.receiveSnapshot(message.snapshot);
+        return;
+      case "worldDelta":
+        this.world.receiveDelta({
+          fromRevision: message.fromRevision,
+          revision: message.revision,
+          changes: message.changes,
+        });
+        return;
+      case "worldCommandAccepted":
+        this.world.receiveCommandResult(message.requestId, null);
+        return;
+      case "worldCommandRejected":
+        this.world.receiveCommandResult(message.requestId, message.reason);
+        return;
     }
   }
 
-  private send(message: NetworkClientMessage): void {
+  /** @internal Used by child sessions sharing this socket. */
+  sendNetworkMessage(message: NetworkClientMessage): void {
     if (this.socket.readyState !== 1) throw new Error("WebSocket is not open");
     this.socket.send(JSON.stringify(message));
+  }
+
+  /** @internal Allocates correlation IDs across every session on the socket. */
+  createRequestId(): RequestId {
+    this.assertOpen();
+    return this.requestIdFactory();
   }
 
   private publish(event: NetworkClientEvent): void {
@@ -244,6 +284,7 @@ export class NetworkClient {
     this.closed = true;
     const rejection = error ?? new Error("NetworkClient closed");
     for (const session of this.sessions.values()) session.terminate();
+    this.world.terminate(rejection);
     this.sessions.clear();
     for (const pending of this.playerRequests.values()) pending.reject(rejection);
     for (const pending of this.battleRequests.values()) pending.reject(rejection);

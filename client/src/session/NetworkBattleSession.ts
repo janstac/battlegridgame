@@ -1,8 +1,10 @@
 import type {
   BattleId,
+  BattleParticipantId,
   BattleSnapshot,
   ClientMessage,
-  PlayerId,
+  HostedParticipant,
+  Position,
   ServerMessage,
 } from "@grid-game/shared";
 import type {
@@ -14,7 +16,9 @@ import type { NetworkClient } from "./NetworkClient.ts";
 export class NetworkBattleSession implements BattleEngineConnection {
   readonly initialSnapshot: BattleSnapshot;
   readonly battleId: BattleId;
-  readonly playerId: PlayerId;
+  readonly localParticipantId: BattleParticipantId;
+  readonly roster: readonly HostedParticipant[];
+  readonly worldPosition: Position | null;
   private readonly client: NetworkClient;
   private readonly listeners = new Set<BattleEngineConnectionListener>();
   private readonly buffered: ServerMessage[] = [];
@@ -24,13 +28,22 @@ export class NetworkBattleSession implements BattleEngineConnection {
   constructor(
     client: NetworkClient,
     battleId: BattleId,
-    playerId: PlayerId,
+    localParticipantId: BattleParticipantId,
+    roster: readonly HostedParticipant[],
+    worldPosition: Position | null,
     snapshot: BattleSnapshot,
   ) {
     this.client = client;
     this.battleId = battleId;
-    this.playerId = playerId;
+    this.localParticipantId = localParticipantId;
+    this.roster = roster.map((participant) => ({ ...participant }));
+    this.worldPosition = worldPosition === null ? null : { ...worldPosition };
     this.initialSnapshot = structuredClone(snapshot);
+    if (!snapshot.participants.some(
+      ({ participantId }) => participantId === localParticipantId,
+    )) {
+      throw new Error(`Unknown local battle participant: ${localParticipantId}`);
+    }
   }
 
   subscribe(listener: BattleEngineConnectionListener): () => void {

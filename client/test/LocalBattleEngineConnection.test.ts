@@ -17,6 +17,7 @@ test("delivers individual state facts asynchronously", async () => {
   const config = { ticksPerSecond: 20, splitDelayTicks: 10 };
   const connection = await LocalBattleEngineConnection.connect({
     setup,
+    participantId: ALPHA,
     config,
     cooldownPolicy: new FixedCooldownPolicy(0),
     clock,
@@ -27,7 +28,6 @@ test("delivers individual state facts asynchronously", async () => {
   const pending = connection.send({
     type: "incrementCell",
     requestId: "alpha-command",
-    playerId: ALPHA,
     position: { x: 0, y: 0 },
   });
   assert.equal(messages.length, 0);
@@ -47,7 +47,7 @@ test("delivers individual state facts asynchronously", async () => {
   }
   const expected = BattleEngine.create(setup, config, new FixedCooldownPolicy(0));
   expected.applyCommand(
-    { playerId: ALPHA },
+    { participantId: ALPHA },
     { kind: "incrementCell", position: { x: 0, y: 0 } },
   );
   assert.deepEqual(projected.toSnapshot(), expected.getSnapshot());
@@ -58,6 +58,7 @@ test("quiet ticks send no snapshots and probes report authoritative tick", async
   const clock = new ManualBattleClock();
   const connection = await LocalBattleEngineConnection.connect({
     setup: createBattleSetup(),
+    participantId: ALPHA,
     clock,
   });
   const messages: ServerMessage[] = [];

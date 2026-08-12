@@ -8,6 +8,25 @@ import {
 } from "../src/session/NetworkClient.ts";
 import { createBattleSnapshot } from "./helpers.ts";
 
+const ROSTER = [
+  { participantId: 0, playerId: "player-1", status: "active" as const },
+  { participantId: 1, playerId: "player-2", status: "active" as const },
+] as const;
+
+function worldSnapshot(revision = 0) {
+  return {
+    revision,
+    grid: {
+      width: 2,
+      height: 1,
+      cells: [
+        { kind: "occupied" as const, playerId: "player-1" },
+        { kind: "unoccupied" as const },
+      ],
+    },
+  };
+}
+
 class FakeSocket implements NetworkWebSocket {
   readyState = 1;
   readonly sent: NetworkClientMessage[] = [];
@@ -62,7 +81,8 @@ test("creates sessions automatically, buffers deltas, routes, and leaves one bat
   client.subscribe((event) => events.push(event.type));
   const creating = client.debugCreateBattle(["player-1", "player-2"]);
   socket.emit({
-    type: "battleJoined", battleId: "battle-1", playerId: "player-1",
+    type: "battleJoined", battleId: "battle-1", localParticipantId: 0,
+    roster: [...ROSTER], worldPosition: null,
     snapshot: createBattleSnapshot(), createRequestId: "request-1",
   });
   const session = await creating;
@@ -115,6 +135,15 @@ test("publishes an unexpected socket close and rejects pending requests", async 
   assert.match(events[0]?.type === "connectionClosed" ? events[0].error?.message ?? "" : "", /WebSocket closed/);
 });
 
+test("rejects World readiness when the socket closes before bootstrap", async () => {
+  const { client, socket } = await connectFake();
+  const readyRejected = assert.rejects(client.world.ready, /WebSocket closed/);
+
+  socket.emitClose();
+
+  await readyRejected;
+});
+
 test("publishes a socket error only once when close follows it", async () => {
   const { client, socket } = await connectFake();
   const events: NetworkClientEvent[] = [];
@@ -134,11 +163,14 @@ test("publishes a socket error only once when close follows it", async () => {
 test("intentional close publishes its reason and terminates joined sessions", async () => {
   const { client, socket } = await connectFake();
   socket.emit({
-    type: "battleJoined", battleId: "battle-1", playerId: "player-1",
+    type: "battleJoined", battleId: "battle-1", localParticipantId: 0,
+    roster: [...ROSTER], worldPosition: { x: 1, y: 2 },
     snapshot: createBattleSnapshot(), createRequestId: null,
   });
   const session = client.getSession("battle-1");
   assert.ok(session);
+  assert.equal(session.localParticipantId, 0);
+  assert.deepEqual(session.worldPosition, { x: 1, y: 2 });
   const events: NetworkClientEvent[] = [];
   client.subscribe((event) => events.push(event));
 
@@ -155,4 +187,112 @@ test("intentional close publishes its reason and terminates joined sessions", as
 
   socket.emitClose();
   assert.equal(events.filter(({ type }) => type === "connectionClosed").length, 1);
+});
+
+test("owns a World projection before consumers subscribe and applies deltas", async () => {
+  const { client, socket } = await connectFake();
+  socket.emit({ type: "worldSnapshot", snapshot: worldSnapshot(2) });
+
+  assert.equal((await client.world.ready).getSnapshot().snapshot?.revision, 2);
+  socket.emit({
+    type: "worldDelta",
+    fromRevision: 2,
+    revision: 3,
+    changes: [{
+      position: { x: 1, y: 0 },
+      cell: { kind: "occupied", playerId: "player-2" },
+    }],
+  });
+
+  const snapshot = client.world.state.getSnapshot().snapshot;
+  assert.equal(snapshot?.revision, 3);
+  assert.deepEqual(snapshot?.grid.cells[1], {
+    kind: "occupied",
+    playerId: "player-2",
+  });
+  await client.close();
+});
+
+test("requests exactly one snapshot per World revision gap", async () => {
+  const { client, socket } = await connectFake();
+  socket.emit({ type: "worldSnapshot", snapshot: worldSnapshot(4) });
+  socket.emit({ type: "worldDelta", fromRevision: 2, revision: 3, changes: [] });
+  socket.emit({ type: "worldDelta", fromRevision: 3, revision: 4, changes: [] });
+  assert.equal(
+    socket.sent.filter(({ type }) => type === "requestWorldSnapshot").length,
+    1,
+  );
+
+  socket.emit({ type: "worldSnapshot", snapshot: worldSnapshot(8) });
+  socket.emit({ type: "worldDelta", fromRevision: 7, revision: 8, changes: [] });
+  assert.equal(
+    socket.sent.filter(({ type }) => type === "requestWorldSnapshot").length,
+    2,
+  );
+  await client.close();
+});
+
+test("correlates accepted and rejected World commands", async () => {
+  const { client, socket } = await connectFake();
+  const challenge = client.world.challengeCell({ x: 1, y: 0 });
+  assert.deepEqual(socket.sent.at(-1), {
+    type: "challengeWorldCell",
+    requestId: "request-1",
+    position: { x: 1, y: 0 },
+  });
+  socket.emit({ type: "worldCommandAccepted", requestId: "request-1" });
+  await challenge;
+
+  const join = client.world.joinChallenge("challenge-1");
+  socket.emit({
+    type: "worldCommandRejected",
+    requestId: "request-2",
+    reason: "challengeFull",
+  });
+  await assert.rejects(join, /challengeFull/);
+
+  const leave = client.world.leaveChallenge("challenge-1");
+  assert.deepEqual(socket.sent.at(-1), {
+    type: "leaveWorldChallenge",
+    requestId: "request-3",
+    challengeId: "challenge-1",
+  });
+  socket.emit({ type: "worldCommandAccepted", requestId: "request-3" });
+  await leave;
+  await client.close();
+});
+
+test("retains multiple battles and removes only the battle that left", async () => {
+  const { client, socket } = await connectFake();
+  for (const battleId of ["battle-1", "battle-2"] as const) {
+    socket.emit({
+      type: "battleJoined",
+      battleId,
+      localParticipantId: 0,
+      roster: [...ROSTER],
+      worldPosition: null,
+      snapshot: createBattleSnapshot(),
+      createRequestId: null,
+    });
+  }
+  const first = client.getSession("battle-1");
+  const second = client.getSession("battle-2");
+  assert.ok(first);
+  assert.ok(second);
+  assert.equal(client.getSessions().length, 2);
+
+  socket.emit({ type: "battleLeft", battleId: "battle-1" });
+  assert.equal(client.getSession("battle-1"), undefined);
+  assert.equal(client.getSession("battle-2"), second);
+  await assert.rejects(
+    first.send({ type: "tickProbe", probeId: "closed" }),
+    /closed/,
+  );
+  await second.send({ type: "tickProbe", probeId: "still-open" });
+  assert.deepEqual(socket.sent.at(-1), {
+    type: "battleMessage",
+    battleId: "battle-2",
+    message: { type: "tickProbe", probeId: "still-open" },
+  });
+  await client.close();
 });

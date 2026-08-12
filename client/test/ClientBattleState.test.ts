@@ -10,25 +10,23 @@ import {
   RecordingBattleEngineConnection,
 } from "./helpers.ts";
 
-test("sends async intents using the local player stored in client state", async () => {
+test("sends actor-free intents using the local participant stored in client state", async () => {
   const connection = new RecordingBattleEngineConnection();
   const clock = new ManualBattleClock();
-  const battle = new ClientBattleState(connection, ALPHA, {
+  const battle = new ClientBattleState(connection, BETA, {
     clock,
     requestIdFactory: () => "request-1",
   });
 
-  battle.setLocalPlayerId(BETA);
   const pending = battle.increment({ x: 2, y: 1 });
   assert.deepEqual(connection.sent, []);
   await pending;
   assert.deepEqual(connection.sent, [{
     type: "incrementCell",
     requestId: "request-1",
-    playerId: BETA,
     position: { x: 2, y: 1 },
   }]);
-  assert.equal(battle.getSnapshot().localPlayerId, BETA);
+  assert.equal(battle.getSnapshot().localParticipantId, BETA);
   await battle.dispose();
 });
 
@@ -43,7 +41,7 @@ test("projects individual authoritative messages without deriving game rules", a
     type: "cellIncremented",
     tick: 3,
     position: { x: 0, y: 0 },
-    cell: { kind: "occupied", playerId: ALPHA, count: 9 },
+    cell: { kind: "occupied", participantId: ALPHA, count: 9 },
     source: "command",
   });
   connection.emit({
@@ -103,7 +101,7 @@ test("preserves rejection across unrelated facts and clears it on replacement", 
     type: "cellIncremented",
     tick: 1,
     position: { x: 2, y: 1 },
-    cell: { kind: "occupied", playerId: BETA, count: 2 },
+    cell: { kind: "occupied", participantId: BETA, count: 2 },
     source: "command",
   });
   assert.deepEqual(battle.getSnapshot().lastRejection, {

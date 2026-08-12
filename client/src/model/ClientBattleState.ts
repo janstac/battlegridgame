@@ -1,9 +1,9 @@
 import {
   BattleState,
   applyBattleServerMessage,
+  type BattleParticipantId,
   type BattleSnapshot,
   type CommandRejectionReason,
-  type PlayerId,
   type Position,
   type RequestId,
   type ServerMessage,
@@ -19,7 +19,7 @@ export type BattleCommandRejection = Readonly<{
 /** Stable immutable projection consumed by React via useSyncExternalStore. */
 export type ClientBattleViewState = Readonly<{
   battle: BattleSnapshot;
-  localPlayerId: PlayerId;
+  localParticipantId: BattleParticipantId;
   estimatedTick: number;
   lastRejection: BattleCommandRejection | null;
 }>;
@@ -62,7 +62,7 @@ function defaultRequestIdFactory(): RequestIdFactory {
  */
 export class ClientBattleState {
   private battle: BattleState;
-  private playerId: PlayerId;
+  private readonly participantId: BattleParticipantId;
   private readonly connection: BattleEngineConnection;
   private readonly requestIdFactory: RequestIdFactory;
   private readonly clock: ClientBattleClock;
@@ -80,15 +80,15 @@ export class ClientBattleState {
 
   constructor(
     connection: BattleEngineConnection,
-    localPlayerId: PlayerId,
+    localParticipantId: BattleParticipantId,
     options: ClientBattleStateOptions = {},
   ) {
     this.connection = connection;
     this.battle = BattleState.restore(connection.initialSnapshot);
-    if (!this.battle.players.includes(localPlayerId)) {
-      throw new Error(`Unknown battle player: ${localPlayerId}`);
+    if (this.battle.participant(localParticipantId) === undefined) {
+      throw new Error(`Unknown battle participant: ${localParticipantId}`);
     }
-    this.playerId = localPlayerId;
+    this.participantId = localParticipantId;
     this.requestIdFactory = options.requestIdFactory ?? defaultRequestIdFactory();
     this.clock = options.clock ?? SYSTEM_CLIENT_BATTLE_CLOCK;
     this.probeIntervalMs = options.probeIntervalMs ?? 1_000;
@@ -128,18 +128,8 @@ export class ClientBattleState {
     return () => this.listeners.delete(listener);
   };
 
-  get localPlayerId(): PlayerId {
-    return this.playerId;
-  }
-
-  setLocalPlayerId(playerId: PlayerId): void {
-    this.assertUsable();
-    if (!this.battle.players.includes(playerId)) {
-      throw new Error(`Unknown battle player: ${playerId}`);
-    }
-    if (playerId === this.playerId) return;
-    this.playerId = playerId;
-    this.publish();
+  get localParticipantId(): BattleParticipantId {
+    return this.participantId;
   }
 
   async increment(position: Position): Promise<RequestId> {
@@ -149,7 +139,6 @@ export class ClientBattleState {
     await this.connection.send({
       type: "incrementCell",
       requestId,
-      playerId: this.playerId,
       position: { ...position },
     });
     return requestId;
@@ -231,7 +220,7 @@ export class ClientBattleState {
   private createViewState(): ClientBattleViewState {
     return {
       battle: this.battle.toSnapshot(),
-      localPlayerId: this.playerId,
+      localParticipantId: this.participantId,
       estimatedTick: this.estimateTick(),
       lastRejection: this.rejection,
     };

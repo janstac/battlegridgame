@@ -5,6 +5,7 @@ import {
   FixedCooldownPolicy,
   type BattleConfig,
   type BattleEvent,
+  type BattleParticipantId,
   type BattleSetup,
   type BattleSnapshot,
   type ClientMessage,
@@ -34,6 +35,8 @@ const SYSTEM_LOCAL_BATTLE_CLOCK: LocalBattleClock = {
 
 export type LocalBattleEngineConnectionOptions = Readonly<{
   setup: BattleSetup;
+  /** Trusted identity used for all commands sent through this connection. */
+  participantId: BattleParticipantId;
   config?: BattleConfig;
   cooldownPolicy?: CooldownPolicy;
   clock?: LocalBattleClock;
@@ -45,6 +48,7 @@ export class LocalBattleEngineConnection implements BattleEngineConnection {
   private readonly config: BattleConfig;
   private readonly cooldownPolicy: CooldownPolicy;
   private readonly clock: LocalBattleClock;
+  private readonly participantId: BattleParticipantId;
   private readonly listeners = new Set<BattleEngineConnectionListener>();
   private engine: BattleEngine;
   private timer: unknown | null = null;
@@ -55,12 +59,18 @@ export class LocalBattleEngineConnection implements BattleEngineConnection {
     this.config = { ...(options.config ?? DEFAULT_BATTLE_CONFIG) };
     this.cooldownPolicy = options.cooldownPolicy ?? new FixedCooldownPolicy(10);
     this.clock = options.clock ?? SYSTEM_LOCAL_BATTLE_CLOCK;
+    this.participantId = options.participantId;
     this.engine = BattleEngine.create(
       options.setup,
       this.config,
       this.cooldownPolicy,
     );
     this.initialSnapshot = this.engine.getSnapshot();
+    if (!this.initialSnapshot.participants.some(
+      ({ participantId }) => participantId === this.participantId,
+    )) {
+      throw new Error(`Unknown local battle participant: ${this.participantId}`);
+    }
   }
 
   /** Creates the connection across an async boundary, like a remote handshake. */
@@ -86,7 +96,7 @@ export class LocalBattleEngineConnection implements BattleEngineConnection {
       switch (message.type) {
         case "incrementCell": {
           const result = this.engine.applyCommand(
-            { playerId: message.playerId },
+            { participantId: this.participantId },
             { kind: "incrementCell", position: message.position },
           );
           if (!result.accepted) {

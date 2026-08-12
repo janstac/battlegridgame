@@ -8,17 +8,23 @@ import type {
 import type { ClientBattleClock } from "../src/model/index.ts";
 import type { BattleEngineConnection } from "../src/session/index.ts";
 
-export const ALPHA = "Alpha";
-export const BETA = "Beta";
+export const ALPHA = 0;
+export const BETA = 1;
 
 export function createBattleSetup(): BattleSetup {
   const cells: BattleCell[] = Array.from(
     { length: 6 },
     (): BattleCell => ({ kind: "empty" }),
   );
-  cells[0] = { kind: "occupied", playerId: ALPHA, count: 1 };
-  cells[5] = { kind: "occupied", playerId: BETA, count: 1 };
-  return { players: [ALPHA, BETA], grid: { width: 3, height: 2, cells } };
+  cells[0] = { kind: "occupied", participantId: ALPHA, count: 1 };
+  cells[5] = { kind: "occupied", participantId: BETA, count: 1 };
+  return {
+    participants: [
+      { participantId: ALPHA, status: "active" },
+      { participantId: BETA, status: "active" },
+    ],
+    grid: { width: 3, height: 2, cells },
+  };
 }
 
 export function createBattleSnapshot(tick = 0): BattleSnapshot {
@@ -27,7 +33,7 @@ export function createBattleSnapshot(tick = 0): BattleSnapshot {
     config: { ticksPerSecond: 20, splitDelayTicks: 10 },
     tick,
     status: { kind: "running" },
-    players: [...setup.players],
+    participants: setup.participants.map((participant) => ({ ...participant })),
     grid: { ...setup.grid, cells: setup.grid.cells.map((cell) => ({ ...cell })) },
     cooldowns: [],
     pendingSplits: [],
