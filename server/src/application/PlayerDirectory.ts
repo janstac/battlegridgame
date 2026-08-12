@@ -15,5 +15,8 @@ export class PlayerDirectory {
 
   get(playerId: PlayerId): ClientConnection | undefined { return this.players.get(playerId); }
   playerIds(): readonly PlayerId[] { return [...this.players.keys()]; }
-  remove(playerId: PlayerId): void { this.players.delete(playerId); }
+  remove(playerId: PlayerId, expected?: ClientConnection): void {
+    if (expected !== undefined && this.players.get(playerId) !== expected) return;
+    this.players.delete(playerId);
+  }
 }

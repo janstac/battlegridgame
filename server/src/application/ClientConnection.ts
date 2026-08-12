@@ -1,27 +1,39 @@
 import type {
   BattleId,
+  BattleParticipantId,
   NetworkClientMessage,
   NetworkServerMessage,
   PlayerId,
+  RequestId,
+  WorldCommandRejectionReason,
+  WorldDelta,
+  WorldSnapshot,
 } from "@grid-game/shared";
-import type { BattleCoordinator } from "./BattleCoordinator.ts";
 import type { HostedBattle } from "../game/HostedBattle.ts";
+import type { WorldCoordinator } from "./WorldCoordinator.ts";
 
-type Membership = { battle: HostedBattle; detach(): void };
+export type BattleMembership = Readonly<{
+  battle: HostedBattle;
+  participantId: BattleParticipantId;
+  detach(): void;
+}>;
 
 /** Application-level state for one authenticated multiplexed client socket. */
 export class ClientConnection {
   readonly playerId: PlayerId;
-  private readonly coordinator: BattleCoordinator;
+  private readonly coordinator: WorldCoordinator;
   private readonly output: (message: NetworkServerMessage) => void;
   private readonly protocolViolation: () => void;
-  private readonly memberships = new Map<BattleId, Membership>();
+  private readonly memberships = new Map<BattleId, BattleMembership>();
   private operations: Promise<void> = Promise.resolve();
+  private unsubscribeWorld: (() => void) | undefined;
+  private closing: Promise<void> | undefined;
+  private opened = false;
   private closed = false;
 
   constructor(
     playerId: PlayerId,
-    coordinator: BattleCoordinator,
+    coordinator: WorldCoordinator,
     output: (message: NetworkServerMessage) => void,
     protocolViolation: () => void,
   ) {
@@ -31,7 +43,17 @@ export class ClientConnection {
     this.protocolViolation = protocolViolation;
   }
 
-  sendConnected(): void { this.output({ type: "connected", playerId: this.playerId }); }
+  get isClosed(): boolean { return this.closed; }
+
+  /** Sends identity first, then allocates/bootstraps World state before input. */
+  async open(): Promise<void> {
+    if (this.closed || this.opened) return;
+    this.opened = true;
+    this.output({ type: "connected", playerId: this.playerId });
+    const initialized = this.operations.then(() => this.coordinator.connect(this));
+    this.operations = initialized.catch(() => undefined);
+    await initialized;
+  }
 
   async receive(message: NetworkClientMessage): Promise<void> {
     const next = this.operations.then(async () => {
@@ -51,24 +73,51 @@ export class ClientConnection {
         }
         return;
       case "debugCreateBattle": {
-        const reason = this.coordinator.createDebugBattle(this, message.requestId, message.playerIds);
+        const reason = await this.coordinator.createDebugBattle(
+          this,
+          message.requestId,
+          message.playerIds,
+        );
         if (reason !== null) this.output({ type: "debugCreateBattleRejected", requestId: message.requestId, reason });
         return;
       }
+      case "challengeWorldCell":
+        await this.sendWorldCommandResult(
+          message.requestId,
+          this.coordinator.challengeWorldCell(this, message.position),
+        );
+        return;
+      case "joinWorldChallenge":
+        await this.sendWorldCommandResult(
+          message.requestId,
+          this.coordinator.joinWorldChallenge(this, message.challengeId),
+        );
+        return;
+      case "leaveWorldChallenge":
+        await this.sendWorldCommandResult(
+          message.requestId,
+          this.coordinator.leaveWorldChallenge(this, message.challengeId),
+        );
+        return;
+      case "requestWorldSnapshot":
+        await this.coordinator.requestWorldSnapshot(this);
+        return;
       case "leaveBattle":
-        this.leaveBattle(message.battleId, true);
+        await this.coordinator.leaveBattle(this, message.battleId, message.requestId);
         return;
       case "battleMessage": {
         const membership = this.memberships.get(message.battleId);
         if (membership === undefined) { this.failProtocol(); return; }
-        if (message.message.type === "incrementCell" && message.message.playerId !== this.playerId) {
-          this.failProtocol(); return;
-        }
-        await membership.battle.receive(this.playerId, message.message, (reply) => {
-          if (!this.closed && this.memberships.has(message.battleId)) {
-            this.output({ type: "battleMessage", battleId: message.battleId, message: reply });
-          }
-        });
+        await membership.battle.receive(
+          membership.participantId,
+          message.message,
+          (reply) => {
+            if (!this.closed && this.memberships.has(message.battleId)) {
+              this.output({ type: "battleMessage", battleId: message.battleId, message: reply });
+            }
+          },
+        );
+        return;
       }
     }
   }
@@ -76,35 +125,97 @@ export class ClientConnection {
   attachBattle(
     battleId: BattleId,
     battle: HostedBattle,
-    createRequestId: string | null,
+    createRequestId: RequestId | null,
   ): void {
-    if (this.closed) return;
+    if (this.closed || this.memberships.has(battleId)) return;
+    const participantId = battle.participantIdForPlayer(this.playerId);
+    if (participantId === undefined) {
+      throw new Error(`Player ${this.playerId} is not in battle ${battleId}`);
+    }
     const attachment = battle.attach((message) => {
       if (!this.closed && this.memberships.has(battleId)) {
         this.output({ type: "battleMessage", battleId, message });
       }
     });
-    this.memberships.set(battleId, { battle, detach: attachment.detach });
-    this.output({ type: "battleJoined", battleId, playerId: this.playerId, snapshot: attachment.snapshot, createRequestId });
+    this.memberships.set(battleId, {
+      battle,
+      participantId,
+      detach: attachment.detach,
+    });
+    this.output({
+      type: "battleJoined",
+      battleId,
+      worldPosition: battle.worldPosition,
+      localParticipantId: participantId,
+      roster: [...battle.getRoster()],
+      snapshot: attachment.snapshot,
+      createRequestId,
+    });
   }
 
-  close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    for (const membership of this.memberships.values()) membership.detach();
-    this.memberships.clear();
+  getBattleMembership(battleId: BattleId): BattleMembership | undefined {
+    return this.memberships.get(battleId);
   }
 
-  private leaveBattle(battleId: BattleId, acknowledge: boolean): void {
+  detachBattle(
+    battleId: BattleId,
+    acknowledge: boolean,
+    requestId?: RequestId,
+  ): void {
     const membership = this.memberships.get(battleId);
     if (membership === undefined) return;
     this.memberships.delete(battleId);
     membership.detach();
-    if (acknowledge && !this.closed) this.output({ type: "battleLeft", battleId });
+    if (!acknowledge || this.closed) return;
+    this.output({
+      type: "battleLeft",
+      battleId,
+      ...(requestId === undefined ? {} : { requestId }),
+    });
+  }
+
+  sendWorldSnapshot(snapshot: WorldSnapshot): void {
+    if (!this.closed) this.output({ type: "worldSnapshot", snapshot });
+  }
+
+  sendWorldDelta(delta: WorldDelta): void {
+    if (!this.closed) this.output({ type: "worldDelta", ...delta });
+  }
+
+  setWorldSubscription(unsubscribe: () => void): void {
+    this.unsubscribeWorld?.();
+    if (this.closed) unsubscribe();
+    else this.unsubscribeWorld = unsubscribe;
+  }
+
+  async close(): Promise<void> {
+    if (this.closing !== undefined) return await this.closing;
+    if (this.closed) return;
+    this.closed = true;
+    this.unsubscribeWorld?.();
+    this.unsubscribeWorld = undefined;
+    const disconnecting = this.operations.then(() => this.coordinator.disconnect(this));
+    this.operations = disconnecting.catch(() => undefined);
+    this.closing = disconnecting.finally(() => {
+      for (const membership of this.memberships.values()) membership.detach();
+      this.memberships.clear();
+    });
+    await this.closing;
+  }
+
+  private async sendWorldCommandResult(
+    requestId: RequestId,
+    result: Promise<WorldCommandRejectionReason | null>,
+  ): Promise<void> {
+    const reason = await result;
+    if (this.closed) return;
+    this.output(reason === null
+      ? { type: "worldCommandAccepted", requestId }
+      : { type: "worldCommandRejected", requestId, reason });
   }
 
   private failProtocol(): void {
-    this.close();
+    void this.close();
     this.protocolViolation();
   }
 }

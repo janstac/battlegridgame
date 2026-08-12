@@ -3,19 +3,20 @@ import { parseNetworkClientMessage, type NetworkServerMessage } from "@grid-game
 import { WebSocket, WebSocketServer } from "ws";
 import type { PlayerDirectory } from "../application/PlayerDirectory.ts";
 import { ClientConnection } from "../application/ClientConnection.ts";
-import type { BattleCoordinator } from "../application/BattleCoordinator.ts";
+import type { WorldCoordinator } from "../application/WorldCoordinator.ts";
 
 /** The sole WebSocket transport adapter; all application state lives elsewhere. */
 export class BattleWebSocketGateway {
   private readonly players: PlayerDirectory;
-  private readonly coordinator: BattleCoordinator;
+  private readonly coordinator: WorldCoordinator;
   private readonly webSockets = new Set<WebSocket>();
+  private readonly connections = new Map<WebSocket, ClientConnection>();
   private readonly server = new WebSocketServer({ noServer: true });
 
   constructor(
     httpServer: HttpServer,
     players: PlayerDirectory,
-    coordinator: BattleCoordinator,
+    coordinator: WorldCoordinator,
   ) {
     this.players = players;
     this.coordinator = coordinator;
@@ -31,9 +32,12 @@ export class BattleWebSocketGateway {
     this.server.on("connection", (socket) => this.accept(socket));
   }
 
-  close(): void {
+  async close(): Promise<void> {
+    const connections = [...this.connections.values()];
     for (const socket of this.webSockets) socket.close(1001, "server shutdown");
     this.webSockets.clear();
+    this.connections.clear();
+    await Promise.all(connections.map((connection) => connection.close()));
     this.server.close();
   }
 
@@ -48,8 +52,10 @@ export class BattleWebSocketGateway {
       output,
       () => socket.close(1008, "protocol violation"),
     ));
-    // Install identity and send it before accepting any client messages.
-    connection.sendConnected();
+    this.connections.set(socket, connection);
+    // open() sends identity immediately. Its queued World bootstrap completes
+    // before receive() handles any subsequently received message.
+    void connection.open().catch(() => socket.close(1011, "server error"));
     socket.on("message", (data, isBinary) => {
       if (isBinary) { socket.close(1008, "text messages required"); return; }
       try {
@@ -61,8 +67,8 @@ export class BattleWebSocketGateway {
     });
     socket.once("close", () => {
       this.webSockets.delete(socket);
-      this.players.remove(connection.playerId);
-      connection.close();
+      this.connections.delete(socket);
+      void connection.close();
     });
   }
 

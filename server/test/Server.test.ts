@@ -1,22 +1,58 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { NetworkServerMessage } from "@grid-game/shared";
-import { BattleCoordinator } from "../src/application/BattleCoordinator.ts";
 import { ClientConnection } from "../src/application/ClientConnection.ts";
 import { PlayerDirectory } from "../src/application/PlayerDirectory.ts";
+import { WorldCoordinator } from "../src/application/WorldCoordinator.ts";
 import { BattleRegistry } from "../src/game/BattleRegistry.ts";
-import { DebugBattleFactory } from "../src/game/DebugBattleFactory.ts";
+import { StandardBattleFactory } from "../src/game/StandardBattleFactory.ts";
+import type { HostedBattleClock } from "../src/game/HostedBattle.ts";
+import type { PendingChallengeClock } from "../src/world/PendingChallenge.ts";
+import { World } from "../src/world/World.ts";
 
-function harness(debugEnabled = true, maxDebugPlayers = 8) {
+class ManualChallengeClock implements PendingChallengeClock {
+  nowMs = 1_000;
+  private callbacks = new Map<number, { callback(): void; at: number }>();
+  private sequence = 1;
+
+  now(): number { return this.nowMs; }
+  setTimeout(callback: () => void, delayMs: number): unknown {
+    const handle = this.sequence++;
+    this.callbacks.set(handle, { callback, at: this.nowMs + delayMs });
+    return handle;
+  }
+  clearTimeout(handle: unknown): void {
+    if (typeof handle === "number") this.callbacks.delete(handle);
+  }
+  advance(ms: number): void {
+    this.nowMs += ms;
+    for (const [handle, entry] of [...this.callbacks]) {
+      if (entry.at <= this.nowMs) {
+        this.callbacks.delete(handle);
+        entry.callback();
+      }
+    }
+  }
+}
+
+const battleClock: HostedBattleClock = {
+  setInterval: () => 1,
+  clearInterval: () => undefined,
+};
+
+async function harness(debugEnabled = true) {
   const players = new PlayerDirectory();
   const battles = new BattleRegistry();
-  const coordinator = new BattleCoordinator(
+  const world = new World({ random: { next: () => 0 } });
+  const challengeClock = new ManualChallengeClock();
+  const coordinator = new WorldCoordinator(
     players,
     battles,
-    new DebugBattleFactory({ setInterval: () => 1, clearInterval: () => undefined }),
-    { debugEnabled, maxDebugPlayers },
+    world,
+    new StandardBattleFactory(battleClock),
+    { debugEnabled, challengeClock },
   );
-  const connect = () => {
+  const connect = async () => {
     const messages: NetworkServerMessage[] = [];
     let violations = 0;
     const connection = players.register((playerId) => new ClientConnection(
@@ -25,142 +61,176 @@ function harness(debugEnabled = true, maxDebugPlayers = 8) {
       (message) => messages.push(message),
       () => { violations += 1; },
     ));
-    connection.sendConnected();
+    await connection.open();
     return { connection, messages, violations: () => violations };
   };
-  return { players, battles, coordinator, connect };
+  return { players, battles, world, challengeClock, coordinator, connect };
 }
 
-test("allocates monotonic identities and player snapshots reflect live connections", async () => {
-  const app = harness();
-  const first = app.connect();
-  const second = app.connect();
-  assert.deepEqual(first.messages[0], { type: "connected", playerId: "player-1" });
-  assert.deepEqual(second.messages[0], { type: "connected", playerId: "player-2" });
-  await second.connection.receive({ type: "debugGetPlayerIds", requestId: "players-a" });
-  assert.deepEqual(second.messages.at(-1), {
-    type: "debugPlayerIds", requestId: "players-a", playerIds: ["player-1", "player-2"],
-  });
-  app.players.remove(first.connection.playerId);
-  first.connection.close();
-  const third = app.connect();
-  assert.equal(third.connection.playerId, "player-3");
-  await third.connection.receive({ type: "debugGetPlayerIds", requestId: "players-b" });
-  assert.deepEqual(third.messages.at(-1), {
-    type: "debugPlayerIds", requestId: "players-b", playerIds: ["player-2", "player-3"],
-  });
-  await app.battles.dispose();
+test("connection bootstrap assigns two cells and publishes later allocations", async (t) => {
+  const app = await harness();
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const first = await app.connect();
+  assert.deepEqual(first.messages.map(({ type }) => type), ["connected", "worldSnapshot"]);
+  assert.equal(app.world.snapshot().grid.cells.filter(
+    (cell) => cell.kind === "occupied" && cell.playerId === "player-1",
+  ).length, 2);
+
+  const second = await app.connect();
+  assert.equal(first.messages.at(-1)?.type, "worldDelta");
+  assert.deepEqual(second.messages.slice(0, 2).map(({ type }) => type), [
+    "connected",
+    "worldSnapshot",
+  ]);
+  assert.equal(second.messages[1]?.type === "worldSnapshot"
+    ? second.messages[1].snapshot.revision : -1, app.world.revision);
 });
 
-test("validates debug creation and delivers battleJoined to every participant", async () => {
-  const app = harness();
-  const first = app.connect();
-  const second = app.connect();
-  await first.connection.receive({
-    type: "debugCreateBattle", requestId: "bad", playerIds: ["player-1", "missing"],
-  });
-  assert.deepEqual(first.messages.at(-1), {
-    type: "debugCreateBattleRejected", requestId: "bad", reason: "unknownPlayer",
-  });
-  await first.connection.receive({
-    type: "debugCreateBattle", requestId: "duplicate", playerIds: ["player-1", "player-1"],
-  });
-  const duplicate = first.messages.at(-1);
-  assert.equal(duplicate?.type === "debugCreateBattleRejected"
-    ? duplicate.reason : "", "duplicatePlayerIds");
-  await first.connection.receive({
-    type: "debugCreateBattle", requestId: "missing-requester", playerIds: ["player-2", "player-3"],
-  });
-  const missingRequester = first.messages.at(-1);
-  assert.equal(missingRequester?.type === "debugCreateBattleRejected"
-    ? missingRequester.reason : "", "requesterNotIncluded");
-  await first.connection.receive({
-    type: "debugCreateBattle", requestId: "create", playerIds: ["player-1", "player-2"],
-  });
-  const firstJoin = first.messages.at(-1);
-  const secondJoin = second.messages.at(-1);
-  assert.equal(firstJoin?.type, "battleJoined");
-  assert.equal(firstJoin?.type === "battleJoined" ? firstJoin.battleId : "", "battle-1");
-  assert.equal(firstJoin?.type === "battleJoined" ? firstJoin.createRequestId : null, "create");
-  assert.equal(secondJoin?.type === "battleJoined" ? secondJoin.createRequestId : "x", null);
+test("challenge creation rejects self challenges, accepts public joins, and cancels on leave", async (t) => {
+  const app = await harness();
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const first = await app.connect();
+  const second = await app.connect();
+  const third = await app.connect();
 
-  await first.connection.receive({ type: "battleMessage", battleId: "battle-1", message: {
-    type: "tickProbe", probeId: "probe",
-  } });
-  assert.deepEqual(first.messages.at(-1), {
-    type: "battleMessage", battleId: "battle-1",
-    message: { type: "tickProbeResult", probeId: "probe", tick: 0 },
+  await first.connection.receive({
+    type: "challengeWorldCell", requestId: "self", position: { x: 0, y: 0 },
   });
+  assert.deepEqual(first.messages.at(-1), {
+    type: "worldCommandRejected", requestId: "self", reason: "selfChallenge",
+  });
+
+  await first.connection.receive({
+    type: "challengeWorldCell", requestId: "challenge", position: { x: 2, y: 0 },
+  });
+  assert.equal(first.messages.at(-1)?.type, "worldCommandAccepted");
+  const pending = app.world.cellAt({ x: 2, y: 0 });
+  assert.equal(pending.kind, "challengePending");
+  if (pending.kind !== "challengePending") return;
+  assert.deepEqual(pending.participantIds, ["player-2", "player-1"]);
+
+  await third.connection.receive({
+    type: "joinWorldChallenge", requestId: "join", challengeId: pending.challengeId,
+  });
+  assert.deepEqual(app.world.cellAt({ x: 2, y: 0 }), {
+    ...pending,
+    participantIds: ["player-2", "player-1", "player-3"],
+  });
+  await first.connection.receive({
+    type: "leaveWorldChallenge", requestId: "leave", challengeId: pending.challengeId,
+  });
+  await third.connection.receive({
+    type: "leaveWorldChallenge", requestId: "cancel", challengeId: pending.challengeId,
+  });
+  assert.deepEqual(app.world.cellAt({ x: 2, y: 0 }), {
+    kind: "occupied", playerId: "player-2",
+  });
+});
+
+test("expiry starts one participant-only battle and explicit leave withdraws", async (t) => {
+  const app = await harness();
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const first = await app.connect();
+  const second = await app.connect();
+  const observer = await app.connect();
+  await first.connection.receive({
+    type: "challengeWorldCell", requestId: "challenge", position: { x: 2, y: 0 },
+  });
+  const pending = app.world.cellAt({ x: 2, y: 0 });
+  assert.equal(pending.kind, "challengePending");
+  const observerCount = observer.messages.length;
+
+  app.challengeClock.advance(10_000);
+  await app.coordinator.requestWorldSnapshot(first.connection);
+  const cell = app.world.cellAt({ x: 2, y: 0 });
+  assert.deepEqual(cell, {
+    kind: "battle", battleId: "battle-1", playerIds: ["player-2", "player-1"],
+  });
+  const firstJoin = first.messages.find((message) => message.type === "battleJoined");
+  const secondJoin = second.messages.find((message) => message.type === "battleJoined");
+  assert.equal(firstJoin?.type === "battleJoined" ? firstJoin.localParticipantId : -1, 1);
+  assert.equal(secondJoin?.type === "battleJoined" ? secondJoin.localParticipantId : -1, 0);
+  assert.equal(observer.messages.slice(observerCount).some(
+    (message) => message.type === "battleJoined" || message.type === "battleMessage",
+  ), false);
+
   await first.connection.receive({ type: "leaveBattle", battleId: "battle-1" });
-  assert.deepEqual(first.messages.at(-1), { type: "battleLeft", battleId: "battle-1" });
-  const count = first.messages.length;
-  await second.connection.receive({ type: "battleMessage", battleId: "battle-1", message: {
-    type: "incrementCell", requestId: "inc", playerId: "player-2", position: { x: 1, y: 0 },
-  } });
-  assert.equal(first.messages.length, count);
-  await app.battles.dispose();
+  await app.coordinator.requestWorldSnapshot(second.connection);
+  assert.deepEqual(app.world.cellAt({ x: 2, y: 0 }), {
+    kind: "occupied", playerId: "player-2",
+  });
+  assert.equal(app.battles.get("battle-1"), undefined);
+  assert.equal(first.messages.some(
+    (message) => message.type === "battleLeft" && message.battleId === "battle-1",
+  ), true);
+  assert.equal(second.messages.some(
+    (message) => message.type === "battleLeft" && message.battleId === "battle-1",
+  ), true);
 });
 
-test("hosted battles keep probes targeted, broadcast accepted facts, and emit nothing on quiet ticks", async () => {
-  let tick: (() => void) | undefined;
-  const players = new PlayerDirectory();
-  const battles = new BattleRegistry();
-  const factory = new DebugBattleFactory({
-    setInterval(callback) { tick = callback; return 1; },
-    clearInterval() { tick = undefined; },
-  });
-  const coordinator = new BattleCoordinator(players, battles, factory, { debugEnabled: true });
-  const outputs: NetworkServerMessage[][] = [[], []];
-  const connections = outputs.map((output) => players.register((playerId) => new ClientConnection(
-    playerId, coordinator, (message) => output.push(message), () => undefined,
-  )));
-  await connections[0]?.receive({
-    type: "debugCreateBattle", requestId: "create", playerIds: ["player-1", "player-2"],
-  });
-  const counts = outputs.map((output) => output.length);
-  tick?.();
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.deepEqual(outputs.map((output) => output.length), counts);
-  await connections[0]?.receive({ type: "battleMessage", battleId: "battle-1", message: {
-    type: "incrementCell", requestId: "increment", playerId: "player-1", position: { x: 0, y: 0 },
-  } });
-  assert.equal(outputs[0]?.some((message) => message.type === "battleMessage"), true);
-  assert.equal(outputs[1]?.some((message) => message.type === "battleMessage"), true);
-  const secondCount = outputs[1]?.length;
-  await connections[0]?.receive({ type: "battleMessage", battleId: "battle-1", message: {
-    type: "tickProbe", probeId: "probe",
-  } });
-  assert.equal(outputs[1]?.length, secondCount);
-  const probe = outputs[0]?.at(-1);
-  assert.equal(probe?.type === "battleMessage"
-    ? probe.message.type : "", "tickProbeResult");
-  await battles.dispose();
-});
-
-test("identity spoofing is a protocol violation and debug APIs are gated", async () => {
-  const enabled = harness();
-  const first = enabled.connect();
-  const second = enabled.connect();
+test("disconnect cancels defended challenges, clears ownership, and removes identity", async (t) => {
+  const app = await harness();
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const first = await app.connect();
+  const second = await app.connect();
   await first.connection.receive({
-    type: "debugCreateBattle", requestId: "create", playerIds: ["player-1", "player-2"],
+    type: "challengeWorldCell", requestId: "challenge", position: { x: 2, y: 0 },
   });
-  await first.connection.receive({ type: "battleMessage", battleId: "battle-1", message: {
-    type: "incrementCell", requestId: "spoof", playerId: "player-2", position: { x: 1, y: 0 },
-  } });
-  assert.equal(first.violations(), 1);
-  await enabled.battles.dispose();
+  await second.connection.close();
+  await app.coordinator.requestWorldSnapshot(first.connection);
 
-  const disabled = harness(false);
-  const client = disabled.connect();
+  assert.equal(app.players.get("player-2"), undefined);
+  assert.equal(app.world.snapshot().grid.cells.some(
+    (cell) => cell.kind === "occupied" && cell.playerId === "player-2",
+  ), false);
+  assert.deepEqual(app.world.cellAt({ x: 2, y: 0 }), { kind: "unoccupied" });
+});
+
+test("simultaneous battle disconnects cannot award a cell to a closed player", async (t) => {
+  const app = await harness();
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const first = await app.connect();
+  const second = await app.connect();
+  await first.connection.receive({
+    type: "challengeWorldCell", requestId: "challenge", position: { x: 2, y: 0 },
+  });
+  app.challengeClock.advance(10_000);
+  await app.coordinator.requestWorldSnapshot(first.connection);
+  assert.equal(app.world.cellAt({ x: 2, y: 0 }).kind, "battle");
+
+  await Promise.all([first.connection.close(), second.connection.close()]);
+
+  assert.deepEqual(app.world.cellAt({ x: 2, y: 0 }), { kind: "unoccupied" });
+  assert.equal(app.world.snapshot().grid.cells.some(
+    (cell) => cell.kind === "occupied"
+      && (cell.playerId === "player-1" || cell.playerId === "player-2"),
+  ), false);
+});
+
+test("debug creation remains gated and uses authenticated local identity", async (t) => {
+  const disabled = await harness(false);
+  t.after(async () => { await disabled.coordinator.dispose(); await disabled.battles.dispose(); });
+  const client = await disabled.connect();
   await client.connection.receive({ type: "debugGetPlayerIds", requestId: "get" });
   assert.deepEqual(client.messages.at(-1), {
     type: "debugGetPlayerIdsRejected", requestId: "get", reason: "debugDisabled",
   });
-  await client.connection.receive({
+
+  const enabled = await harness(true);
+  t.after(async () => { await enabled.coordinator.dispose(); await enabled.battles.dispose(); });
+  const first = await enabled.connect();
+  await enabled.connect();
+  await first.connection.receive({
     type: "debugCreateBattle", requestId: "create", playerIds: ["player-1", "player-2"],
   });
-  assert.deepEqual(client.messages.at(-1), {
-    type: "debugCreateBattleRejected", requestId: "create", reason: "debugDisabled",
+  const joined = first.messages.find((message) => message.type === "battleJoined");
+  assert.equal(joined?.type === "battleJoined" ? joined.localParticipantId : -1, 0);
+  await first.connection.receive({
+    type: "battleMessage", battleId: "battle-1",
+    message: { type: "incrementCell", requestId: "increment", position: { x: 1, y: 1 } },
   });
+  assert.equal(first.violations(), 0);
+  assert.equal(first.messages.some(
+    (message) => message.type === "battleMessage" && message.message.type === "cellIncremented",
+  ), true);
 });

@@ -32,6 +32,34 @@ class ManualHostedBattleClock {
   }
 }
 
+class ManualChallengeClock {
+  private readonly callbacks = new Map<number, { callback(): void; at: number }>();
+  private nextHandle = 0;
+  private time = 1_000;
+
+  now(): number { return this.time; }
+
+  setTimeout(callback: () => void, delayMs: number): unknown {
+    const handle = this.nextHandle++;
+    this.callbacks.set(handle, { callback, at: this.time + delayMs });
+    return handle;
+  }
+
+  clearTimeout(handle: unknown): void {
+    if (typeof handle === "number") this.callbacks.delete(handle);
+  }
+
+  advance(ms: number): void {
+    this.time += ms;
+    for (const [handle, entry] of [...this.callbacks]) {
+      if (entry.at <= this.time) {
+        this.callbacks.delete(handle);
+        entry.callback();
+      }
+    }
+  }
+}
+
 function withTimeout<T>(promise: Promise<T>, description: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
@@ -83,7 +111,13 @@ function waitForSessionMessage(
 
 async function startServer(t: TestContext) {
   const clock = new ManualHostedBattleClock();
-  const server = createGridGameServer({ debugEnabled: true, battleClock: clock });
+  const challengeClock = new ManualChallengeClock();
+  const server = createGridGameServer({
+    debugEnabled: true,
+    battleClock: clock,
+    challengeClock,
+    worldRandom: { next: () => 0 },
+  });
   const clients = new Set<NetworkClient>();
   await withTimeout(new Promise<void>((resolve, reject) => {
     server.httpServer.once("error", reject);
@@ -108,7 +142,7 @@ async function startServer(t: TestContext) {
     return client;
   };
 
-  return { clock, connect, server, url };
+  return { clock, challengeClock, connect, server, url };
 }
 
 test("real clients discover players, share authoritative battle facts, probe, leave, and disconnect", async (t) => {
@@ -146,14 +180,13 @@ test("real clients discover players, share authoritative battle facts, probe, le
   await firstSession.send({
     type: "incrementCell",
     requestId: "increment-1",
-    playerId: first.playerId,
-    position: { x: 0, y: 0 },
+    position: { x: 1, y: 1 },
   });
   const expectedIncrement = {
     type: "cellIncremented",
     tick: 0,
-    position: { x: 0, y: 0 },
-    cell: { kind: "occupied", playerId: first.playerId, count: 2 },
+    position: { x: 1, y: 1 },
+    cell: { kind: "occupied", participantId: 0, count: 2 },
     source: "command",
   };
   assert.deepEqual(await firstIncrement, expectedIncrement);
@@ -171,14 +204,13 @@ test("real clients discover players, share authoritative battle facts, probe, le
 
   const secondCooldown = waitForSessionMessage(
     secondSession,
-    (message) => message.type === "cooldownChanged" && message.cooldown.playerId === second.playerId,
+    (message) => message.type === "cooldownChanged" && message.cooldown.participantId === 1,
     "a later broadcast to establish probe routing order",
   );
   await secondSession.send({
     type: "incrementCell",
     requestId: "increment-2",
-    playerId: second.playerId,
-    position: { x: 1, y: 0 },
+    position: { x: 5, y: 1 },
   });
   await secondCooldown;
   unsubscribeSecond();
@@ -223,4 +255,57 @@ test("gateway rejects malformed client messages with a policy close", async (t) 
   }), "the gateway policy close");
   socket.send(JSON.stringify({ type: "not-a-client-message" }));
   assert.deepEqual(await closed, { code: 1008, reason: "invalid message" });
+});
+
+test("real clients observe the World while only challenge participants receive its battle", async (t) => {
+  const app = await startServer(t);
+  const challenger = await app.connect();
+  const defender = await app.connect();
+  const observer = await app.connect();
+  await Promise.all([
+    challenger.world.ready,
+    defender.world.ready,
+    observer.world.ready,
+  ]);
+
+  assert.equal(challenger.world.state.getSnapshot().snapshot?.grid.width, 10);
+  await challenger.world.challengeCell({ x: 2, y: 0 });
+  const pending = challenger.world.state.getSnapshot().snapshot?.grid.cells[2];
+  assert.equal(pending?.kind, "challengePending");
+  if (pending?.kind !== "challengePending") return;
+  assert.deepEqual(pending.participantIds, [defender.playerId, challenger.playerId]);
+
+  const challengerJoin = waitForClientEvent(
+    challenger,
+    (event) => event.type === "battleJoined",
+    "challenger battle session",
+  );
+  const defenderJoin = waitForClientEvent(
+    defender,
+    (event) => event.type === "battleJoined",
+    "defender battle session",
+  );
+  app.challengeClock.advance(10_000);
+  const [challengerEvent, defenderEvent] = await Promise.all([
+    challengerJoin,
+    defenderJoin,
+  ]);
+  assert.equal(challengerEvent.type, "battleJoined");
+  assert.equal(defenderEvent.type, "battleJoined");
+  assert.equal(observer.getSessions().length, 0);
+  assert.equal(observer.world.state.getSnapshot().snapshot?.grid.cells[2]?.kind, "battle");
+
+  const defenderLeft = waitForClientEvent(
+    defender,
+    (event) => event.type === "battleLeft",
+    "winner session disposal",
+  );
+  await challengerEvent.session.close();
+  await defenderLeft;
+  assert.equal(defender.getSessions().length, 0);
+  assert.deepEqual(
+    defender.world.state.getSnapshot().snapshot?.grid.cells[2],
+    { kind: "occupied", playerId: defender.playerId },
+  );
+  assert.equal(app.server.battles.get(challengerEvent.session.battleId), undefined);
 });
