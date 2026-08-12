@@ -1,0 +1,15 @@
+.modeSelection {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.modeAction {
+  min-height: 4rem;
+}
+
+@media (max-width: 36rem) {
+  .modeSelection {
+    grid-template-columns: 1fr;
+  }
+}

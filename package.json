@@ -14,6 +14,7 @@
     "typecheck": "tsc",
     "test": "node --test shared/test/*.test.ts client/test/*.test.ts server/test/*.test.ts",
     "dev:client": "npm run dev --workspace @grid-game/client",
+    "dev:server": "npm run start --workspace @grid-game/server",
     "build:client": "npm run build --workspace @grid-game/client"
   },
   "devDependencies": {

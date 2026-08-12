@@ -1,5 +1,8 @@
 import type { PlayerId } from "@grid-game/shared";
 
+import { ActionButton } from "../ui/ActionButton.tsx";
+import styles from "./DemoControls.module.css";
+
 /** Inputs for local-only player and reset controls. */
 export type DemoControlsProps = Readonly<{
   players: readonly PlayerId[];
@@ -16,9 +19,12 @@ export function DemoControls({
   onReset,
 }: DemoControlsProps) {
   return (
-    <section className="demo-controls">
-      <label htmlFor="active-player">Act as</label>
+    <section className={styles.controls}>
+      <label className={styles.label} htmlFor="active-player">
+        Act as
+      </label>
       <select
+        className={styles.select}
         id="active-player"
         value={selectedPlayerId}
         onChange={(event) => onSelectPlayer(event.target.value)}
@@ -29,9 +35,14 @@ export function DemoControls({
           </option>
         ))}
       </select>
-      <button type="button" onClick={onReset}>
+      <ActionButton
+        className={styles.reset}
+        variant="secondary"
+        type="button"
+        onClick={onReset}
+      >
         Reset battle
-      </button>
+      </ActionButton>
     </section>
   );
 }

@@ -1,0 +1,41 @@
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.8rem;
+  border: 1px solid #29364c;
+  border-radius: 0.8rem;
+  background: #121b2a;
+}
+
+.label {
+  color: #aeb9ca;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.select {
+  min-height: 2.5rem;
+  padding: 0 2.4rem 0 0.75rem;
+  border: 1px solid #3a4a63;
+  border-radius: 0.55rem;
+  color: #f4f7fc;
+  background: #1a2639;
+}
+
+.select:focus-visible {
+  outline: 3px solid #8cafff;
+  outline-offset: 2px;
+}
+
+.reset {
+  margin-left: auto;
+}
+
+@media (max-width: 36rem) {
+  .reset {
+    width: 100%;
+    margin-left: 0;
+  }
+}

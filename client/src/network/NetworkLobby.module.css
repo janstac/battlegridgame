@@ -1,0 +1,156 @@
+.panel {
+  padding: clamp(1rem, 2.6vw, 1.75rem);
+  border: 1px solid #29364c;
+  border-radius: 1rem;
+  background: rgb(17 26 41 / 92%);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 25%);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.headingGroup h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.3rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.75rem;
+  color: #78a0ff;
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.identity {
+  flex: none;
+  margin: 0;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #3a4a63;
+  border-radius: 999px;
+  color: #aeb9ca;
+  font-size: 0.82rem;
+  background: #182438;
+}
+
+.identity strong {
+  color: #ffffff;
+}
+
+.players {
+  min-width: 0;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.players legend {
+  margin-bottom: 0.65rem;
+  color: #aeb9ca;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.playerList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.65rem;
+}
+
+.player {
+  display: flex;
+  min-width: 0;
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #33435b;
+  border-radius: 0.65rem;
+  color: #dfe7f4;
+  background: #151f30;
+  cursor: pointer;
+}
+
+.player:hover {
+  border-color: #526887;
+  background: #19263a;
+}
+
+.player:has(input:focus-visible) {
+  outline: 3px solid #8cafff;
+  outline-offset: 2px;
+}
+
+.player:has(input:disabled) {
+  cursor: default;
+}
+
+.player input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: #8cafff;
+}
+
+.playerName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.localBadge {
+  margin-left: auto;
+  color: #b9f4db;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.empty,
+.selectionCount {
+  color: #929fb4;
+  font-size: 0.84rem;
+}
+
+.empty {
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed #33435b;
+  border-radius: 0.65rem;
+  text-align: center;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 1.25rem;
+}
+
+.selectionCount {
+  margin: 0 auto 0 0;
+}
+
+@media (max-width: 36rem) {
+  .header {
+    display: block;
+  }
+
+  .identity {
+    display: inline-block;
+    margin-top: 1rem;
+  }
+
+  .actions button,
+  .selectionCount {
+    width: 100%;
+  }
+}

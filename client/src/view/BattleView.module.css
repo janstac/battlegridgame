@@ -1,0 +1,82 @@
+.panel {
+  padding: clamp(1rem, 2.6vw, 1.75rem);
+  border: 1px solid #29364c;
+  border-radius: 1rem;
+  background: rgb(17 26 41 / 92%);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 25%);
+}
+
+.summary,
+.playerLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 1rem;
+}
+
+.summary {
+  color: #aab6ca;
+  font-size: 0.82rem;
+}
+
+.summary strong {
+  color: #f7f9fc;
+  font-weight: 700;
+}
+
+.playerLegend {
+  margin: 1rem 0;
+}
+
+.player {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: #b3bfd1;
+  font-size: 0.82rem;
+}
+
+.activePlayer {
+  border-color: #526887;
+  color: #ffffff;
+  background: #1b293d;
+}
+
+.swatch {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+}
+
+.winner,
+.rejection {
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.6rem;
+}
+
+.winner {
+  color: #b9f4db;
+  background: #153d32;
+}
+
+.rejection {
+  color: #ffd1d7;
+  background: #49232c;
+}
+
+.help {
+  max-width: 44rem;
+  margin: 1rem auto 0;
+  color: #929fb4;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 36rem) {
+  .panel {
+    padding: 0.75rem;
+  }
+}

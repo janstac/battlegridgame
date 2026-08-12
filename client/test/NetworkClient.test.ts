@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { NetworkClientMessage, NetworkServerMessage } from "@grid-game/shared";
-import { NetworkClient, type NetworkWebSocket } from "../src/session/NetworkClient.ts";
+import {
+  NetworkClient,
+  type NetworkClientEvent,
+  type NetworkWebSocket,
+} from "../src/session/NetworkClient.ts";
 import { createBattleSnapshot } from "./helpers.ts";
 
 class FakeSocket implements NetworkWebSocket {
@@ -21,6 +25,13 @@ class FakeSocket implements NetworkWebSocket {
   close(): void { this.closeCount += 1; this.readyState = 3; }
   emit(message: NetworkServerMessage): void {
     for (const listener of this.messageListeners) listener({ data: JSON.stringify(message) } as MessageEvent<string>);
+  }
+  emitClose(): void {
+    this.readyState = 3;
+    for (const listener of this.closeListeners) listener();
+  }
+  emitError(): void {
+    for (const listener of this.errorListeners) listener();
   }
 }
 
@@ -84,4 +95,64 @@ test("debug rejections reject their correlated promises", async () => {
   socket.emit({ type: "debugGetPlayerIdsRejected", requestId: "request-2", reason: "debugDisabled" });
   await assert.rejects(players, /debugDisabled/);
   await client.close();
+});
+
+test("publishes an unexpected socket close and rejects pending requests", async () => {
+  const { client, socket } = await connectFake();
+  const events: NetworkClientEvent[] = [];
+  client.subscribe((event) => events.push(event));
+  const players = client.debugGetPlayerIds();
+  const battle = client.debugCreateBattle(["player-1"]);
+  const playersRejected = assert.rejects(players, /WebSocket closed/);
+  const battleRejected = assert.rejects(battle, /WebSocket closed/);
+
+  socket.emitClose();
+
+  await Promise.all([playersRejected, battleRejected]);
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.type, "connectionClosed");
+  assert.equal(events[0]?.type === "connectionClosed" && events[0].reason, "socket");
+  assert.match(events[0]?.type === "connectionClosed" ? events[0].error?.message ?? "" : "", /WebSocket closed/);
+});
+
+test("publishes a socket error only once when close follows it", async () => {
+  const { client, socket } = await connectFake();
+  const events: NetworkClientEvent[] = [];
+  client.subscribe((event) => events.push(event));
+
+  socket.emitError();
+  socket.emitClose();
+
+  assert.equal(events.length, 1);
+  const event = events[0];
+  assert.equal(event?.type, "connectionClosed");
+  if (event?.type !== "connectionClosed") assert.fail("Expected connectionClosed event");
+  assert.equal(event.reason, "error");
+  assert.match(event.error?.message ?? "", /WebSocket connection failed/);
+});
+
+test("intentional close publishes its reason and terminates joined sessions", async () => {
+  const { client, socket } = await connectFake();
+  socket.emit({
+    type: "battleJoined", battleId: "battle-1", playerId: "player-1",
+    snapshot: createBattleSnapshot(), createRequestId: null,
+  });
+  const session = client.getSession("battle-1");
+  assert.ok(session);
+  const events: NetworkClientEvent[] = [];
+  client.subscribe((event) => events.push(event));
+
+  await client.close();
+
+  assert.equal(socket.closeCount, 1);
+  assert.equal(client.getSession("battle-1"), undefined);
+  await assert.rejects(session.send({ type: "tickProbe", probeId: "probe" }), /NetworkBattleSession has been closed/);
+  const event = events.at(-1);
+  assert.equal(event?.type, "connectionClosed");
+  if (event?.type !== "connectionClosed") assert.fail("Expected connectionClosed event");
+  assert.equal(event.reason, "client");
+  assert.equal(event.error, null);
+
+  socket.emitClose();
+  assert.equal(events.filter(({ type }) => type === "connectionClosed").length, 1);
 });

@@ -6,6 +6,7 @@ import {
   type PlayerColorId,
 } from "./BattleCellView.tsx";
 import { BattleGridView } from "./BattleGridView.tsx";
+import styles from "./BattleView.module.css";
 import { useClientBattleState } from "./useClientBattleState.ts";
 
 export type BattleViewProps = Readonly<{
@@ -39,8 +40,8 @@ export function BattleView({ battle, playerColorIds }: BattleViewProps) {
     : null;
 
   return (
-    <section className="battle-panel">
-      <div className="battle-summary">
+    <section className={styles.panel}>
+      <div className={styles.summary}>
         <span>Tick <strong>{state.estimatedTick}</strong></span>
         <span>
           Pending splits <strong>{snapshot.pendingSplits.length}</strong>
@@ -52,7 +53,7 @@ export function BattleView({ battle, playerColorIds }: BattleViewProps) {
         </span>
       </div>
 
-      <div className="player-legend">
+      <div className={styles.playerLegend}>
         {snapshot.players.map((playerId) => {
           const playerColorId = playerColorIds.get(playerId);
           if (playerColorId === undefined) {
@@ -61,15 +62,13 @@ export function BattleView({ battle, playerColorIds }: BattleViewProps) {
           const colors = PLAYER_COLORS[playerColorId];
           return (
             <span
-              className={
-                playerId === state.localPlayerId
-                  ? "player-legend__item player-legend__item--active"
-                  : "player-legend__item"
-              }
+              className={`${styles.player} ${
+                playerId === state.localPlayerId ? styles.activePlayer : ""
+              }`}
               key={playerId}
             >
               <span
-                className="player-legend__swatch"
+                className={styles.swatch}
                 style={{ backgroundColor: colors.fill }}
               />
               {playerId}
@@ -79,12 +78,12 @@ export function BattleView({ battle, playerColorIds }: BattleViewProps) {
       </div>
 
       {winner !== null && (
-        <p className="winner-banner">
+        <p className={styles.winner}>
           {winner} wins the battle.
         </p>
       )}
       {state.lastRejection !== null && (
-        <p className="rejection-banner">
+        <p className={styles.rejection} role="alert">
           {REJECTION_LABELS[state.lastRejection.reason]}
         </p>
       )}
@@ -98,9 +97,9 @@ export function BattleView({ battle, playerColorIds }: BattleViewProps) {
           void battle.increment(position);
         }}
       />
-      <p className="battle-help">
-        Select a player, then activate one of their numbered cells. A dot marks
-        a cell with a delayed split queued.
+      <p className={styles.help}>
+        Activate one of your numbered cells. A dot marks a cell with a delayed
+        split queued.
       </p>
     </section>
   );

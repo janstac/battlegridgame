@@ -1,0 +1,8 @@
+.reconnectAction,
+.backAction {
+  margin-top: 1rem;
+}
+
+.backAction {
+  display: block;
+}

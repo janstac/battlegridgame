@@ -20,7 +20,12 @@ export interface NetworkWebSocket {
 
 export type NetworkClientEvent =
   | { type: "battleJoined"; session: NetworkBattleSession }
-  | { type: "battleLeft"; battleId: BattleId };
+  | { type: "battleLeft"; battleId: BattleId }
+  | {
+    type: "connectionClosed";
+    reason: "client" | "socket" | "error";
+    error: Error | null;
+  };
 
 export type NetworkClientOptions = Readonly<{
   webSocketFactory?: (url: string) => NetworkWebSocket;
@@ -81,11 +86,11 @@ export class NetworkClient {
       });
       socket.addEventListener("error", () => {
         if (!settled) reject(new Error("WebSocket connection failed"));
-        client?.terminate(new Error("WebSocket connection failed"));
+        client?.terminate("error", new Error("WebSocket connection failed"));
       });
       socket.addEventListener("close", () => {
         if (!settled) reject(new Error("WebSocket closed before connecting"));
-        client?.terminate(new Error("WebSocket closed"));
+        client?.terminate("socket", new Error("WebSocket closed"));
       });
     });
   }
@@ -155,8 +160,11 @@ export class NetworkClient {
 
   async close(): Promise<void> {
     if (this.closed) return;
-    this.terminate(new Error("NetworkClient closed"));
-    this.socket.close(1000, "client closed");
+    try {
+      this.terminate("client", null);
+    } finally {
+      this.socket.close(1000, "client closed");
+    }
   }
 
   private receive(message: NetworkServerMessage): void {
@@ -228,18 +236,26 @@ export class NetworkClient {
     for (const listener of [...this.listeners]) listener(event);
   }
 
-  private terminate(error: Error): void {
+  private terminate(
+    reason: "client" | "socket" | "error",
+    error: Error | null,
+  ): void {
     if (this.closed) return;
     this.closed = true;
+    const rejection = error ?? new Error("NetworkClient closed");
     for (const session of this.sessions.values()) session.terminate();
     this.sessions.clear();
-    for (const pending of this.playerRequests.values()) pending.reject(error);
-    for (const pending of this.battleRequests.values()) pending.reject(error);
+    for (const pending of this.playerRequests.values()) pending.reject(rejection);
+    for (const pending of this.battleRequests.values()) pending.reject(rejection);
     for (const resolve of this.leaveRequests.values()) resolve();
     this.playerRequests.clear();
     this.battleRequests.clear();
     this.leaveRequests.clear();
-    this.listeners.clear();
+    try {
+      this.publish({ type: "connectionClosed", reason, error });
+    } finally {
+      this.listeners.clear();
+    }
   }
 
   private assertOpen(): void {
