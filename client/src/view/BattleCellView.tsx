@@ -1,144 +1,131 @@
-import type {
-  BattleCell,
-  PlayerId,
-  Position,
-} from "@grid-game/shared";
 import type { KeyboardEvent } from "react";
 
-import { colorsForPlayer } from "./player-colors.ts";
+import {
+  PENDING_SYMBOL_ID,
+  WALL_SYMBOL_ID,
+} from "./BattleSvgDefinitions.tsx";
+import styles from "./BattleCellView.module.css";
 
-/** Rendering inputs for one complete SVG cell hit area. */
-export type BattleCellViewProps = Readonly<{
-  cell: BattleCell;
-  position: Position;
-  players: readonly PlayerId[];
-  localPlayerId: PlayerId;
-  pendingDueTick?: number;
-  disabled: boolean;
-  onActivate(position: Position): void;
-}>;
+/** Fixed presentation colors available to battle participants. */
+export const PLAYER_COLORS = [
+  { fill: "#2f6fd6", stroke: "#a9c7ff", text: "#ffffff" },
+  { fill: "#d4485f", stroke: "#ffc0ca", text: "#ffffff" },
+  { fill: "#d29d22", stroke: "#684600", text: "#000000" },
+  { fill: "#238b68", stroke: "#9be6ca", text: "#ffffff" },
+] as const;
 
-function cellLabel(
-  cell: BattleCell,
-  position: Position,
-  pendingDueTick?: number,
-): string {
-  const location = `Column ${position.x + 1}, row ${position.y + 1}`;
-  const pendingLabel =
-    pendingDueTick === undefined
-      ? ""
-      : `, split due on tick ${pendingDueTick}`;
-  switch (cell.kind) {
-    case "empty":
-      return `${location}: empty`;
-    case "wall":
-      return `${location}: wall`;
-    case "occupied":
-      return `${location}: ${cell.playerId}, count ${cell.count}${pendingLabel}`;
-  }
+/** Index into the fixed player color palette. */
+export type PlayerColorId = 0 | 1 | 2 | 3;
+
+/** Renders an empty cell in local 0..1 SVG coordinates. */
+export function EmptyCellView() {
+  return (
+    <g className={`${styles.cell} ${styles.empty}`}>
+      <CellSurface />
+    </g>
+  );
 }
 
-/** Renders one battle cell as an accessible, whole-cell SVG control. */
-export function BattleCellView({
-  cell,
-  position,
-  players,
-  localPlayerId,
-  pendingDueTick,
-  disabled,
+/** Renders a wall cell using geometry shared at the application root. */
+export function WallCellView() {
+  return (
+    <g className={`${styles.cell} ${styles.wall}`}>
+      <CellSurface />
+      <use
+        className={styles.wallMark}
+        href={`#${WALL_SYMBOL_ID}`}
+        width="1"
+        height="1"
+      />
+    </g>
+  );
+}
+
+export type OccupiedCellViewProps = Readonly<{
+  count: number;
+  playerColorId: PlayerColorId;
+  canActivate: boolean;
+  hasPendingSplit: boolean;
+  onActivate(): void;
+}>;
+
+/** Renders an occupied cell in local coordinates with no player identity data. */
+export function OccupiedCellView({
+  count,
+  playerColorId,
+  canActivate,
+  hasPendingSplit,
   onActivate,
-}: BattleCellViewProps) {
-  const ownerColors =
-    cell.kind === "occupied"
-      ? colorsForPlayer(cell.playerId, players)
-      : undefined;
-  const ownedByLocalPlayer =
-    cell.kind === "occupied" && cell.playerId === localPlayerId;
-  // This only suppresses impossible UI intents. The authoritative session still
-  // validates ownership because state can change between rendering and input.
-  const canActivate = !disabled && ownedByLocalPlayer;
-  const label = cellLabel(cell, position, pendingDueTick);
-
-  const activate = () => {
-    if (canActivate) {
-      onActivate(position);
-    }
-  };
-
+}: OccupiedCellViewProps) {
+  const colors = PLAYER_COLORS[playerColorId];
   const handleKeyDown = (event: KeyboardEvent<SVGRectElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      activate();
+      onActivate();
     }
   };
 
-  const classNames = [
-    "battle-cell",
-    `battle-cell--${cell.kind}`,
-    ownedByLocalPlayer ? "battle-cell--selected-owner" : "",
-    canActivate ? "battle-cell--interactive" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
   return (
     <g
-      className={classNames}
-      transform={`translate(${position.x} ${position.y})`}
-      role="gridcell"
-      aria-label={label}
+      className={[
+        styles.cell,
+        canActivate ? styles.interactive : "",
+      ].filter(Boolean).join(" ")}
     >
-      <rect
-        className="battle-cell__surface"
-        x="0.035"
-        y="0.035"
-        width="0.93"
-        height="0.93"
-        rx="0.1"
-        fill={ownerColors?.fill}
-        stroke={ownerColors?.stroke}
+      <CellSurface
+        fill={colors.fill}
+        stroke={colors.stroke}
       />
-
-      {cell.kind === "wall" && (
-        <path
-          className="battle-cell__wall-mark"
-          d="M .2 .28 H .8 M .2 .5 H .8 M .2 .72 H .8 M .34 .28 V .5 M .66 .5 V .72"
+      <text
+        className={styles.count}
+        x="0.5"
+        y="0.53"
+        fill={colors.text}
+        textAnchor="middle"
+        dominantBaseline="middle"
+      >
+        {count}
+      </text>
+      {hasPendingSplit && (
+        <use
+          className={styles.pending}
+          href={`#${PENDING_SYMBOL_ID}`}
+          width="1"
+          height="1"
         />
       )}
-
-      {cell.kind === "occupied" && (
-        <text
-          className="battle-cell__count"
-          x="0.5"
-          y="0.53"
-          fill={ownerColors?.text}
-          textAnchor="middle"
-          dominantBaseline="middle"
-        >
-          {cell.count}
-        </text>
-      )}
-
-      {pendingDueTick !== undefined && (
-        <g aria-hidden="true">
-          <circle className="battle-cell__pending" cx="0.78" cy="0.2" r="0.09" />
-        </g>
-      )}
-
       {canActivate && (
         <rect
-          className="battle-cell__hit-target"
+          className={styles.hitTarget}
           x="0"
           y="0"
           width="1"
           height="1"
-          role="button"
           tabIndex={0}
-          aria-label={`Increment ${label}`}
-          onClick={activate}
+          onClick={onActivate}
           onKeyDown={handleKeyDown}
         />
       )}
     </g>
+  );
+}
+
+type CellSurfaceProps = Readonly<{
+  fill?: string;
+  stroke?: string;
+}>;
+
+function CellSurface({ fill, stroke }: CellSurfaceProps) {
+  return (
+    <rect
+      className={styles.surface}
+      x="0.035"
+      y="0.035"
+      width="0.93"
+      height="0.93"
+      rx="0.1"
+      {...(fill === undefined ? {} : { fill })}
+      {...(stroke === undefined ? {} : { stroke })}
+    />
   );
 }

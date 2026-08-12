@@ -176,82 +176,6 @@ select {
   background: #49232c;
 }
 
-.battle-grid {
-  display: block;
-  width: 100%;
-  max-width: 44rem;
-  max-height: 70vh;
-  margin: 0 auto;
-  filter: drop-shadow(0 0.8rem 1rem rgb(0 0 0 / 22%));
-}
-
-.battle-grid__backdrop {
-  fill: #080d16;
-  rx: 0.18px;
-}
-
-.battle-cell {
-  outline: none;
-}
-
-.battle-cell__surface {
-  fill: #172235;
-  stroke: #2b3a50;
-  stroke-width: 0.035;
-  transition: filter 120ms ease, stroke-width 120ms ease;
-}
-
-.battle-cell--empty .battle-cell__surface {
-  fill: #141f30;
-}
-
-.battle-cell--wall .battle-cell__surface {
-  fill: #293140;
-  stroke: #4b5668;
-}
-
-.battle-cell__wall-mark {
-  fill: none;
-  stroke: #758094;
-  stroke-width: 0.055;
-  stroke-linecap: round;
-}
-
-.battle-cell--interactive {
-  cursor: pointer;
-}
-
-.battle-cell--interactive:hover .battle-cell__surface,
-.battle-cell--interactive:focus-within .battle-cell__surface {
-  filter: brightness(1.18);
-  stroke: #ffffff;
-  stroke-width: 0.065;
-}
-
-.battle-cell__hit-target {
-  fill: transparent;
-  pointer-events: all;
-  outline: none;
-}
-
-.battle-cell--selected-owner .battle-cell__surface {
-  stroke-width: 0.065;
-}
-
-.battle-cell__count {
-  font-size: 0.43px;
-  font-weight: 800;
-  pointer-events: none;
-  user-select: none;
-}
-
-.battle-cell__pending {
-  fill: #ffffff;
-  stroke: #121b29;
-  stroke-width: 0.025;
-  pointer-events: none;
-}
-
 .battle-help,
 .loading-status {
   color: #929fb4;
@@ -277,11 +201,5 @@ select {
 
   .battle-panel {
     padding: 0.75rem;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .battle-cell__surface {
-    transition: none;
   }
 }

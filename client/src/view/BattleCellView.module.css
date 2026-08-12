@@ -1,0 +1,63 @@
+.cell {
+  outline: none;
+}
+
+.surface {
+  fill: #172235;
+  stroke: #2b3a50;
+  stroke-width: 0.035;
+  transition: filter 120ms ease, stroke-width 120ms ease;
+}
+
+.empty .surface {
+  fill: #141f30;
+}
+
+.wall .surface {
+  fill: #293140;
+  stroke: #4b5668;
+}
+
+.wallMark {
+  color: #758094;
+  fill: none;
+  stroke-width: 0.055;
+  stroke-linecap: round;
+}
+
+.interactive {
+  cursor: pointer;
+}
+
+.interactive:hover .surface,
+.interactive:focus-within .surface {
+  filter: brightness(1.18);
+  stroke: #ffffff;
+  stroke-width: 0.065;
+}
+
+.hitTarget {
+  fill: transparent;
+  pointer-events: all;
+  outline: none;
+}
+
+.count {
+  font-size: 0.43px;
+  font-weight: 800;
+  pointer-events: none;
+  user-select: none;
+}
+
+.pending {
+  fill: #ffffff;
+  stroke: #121b29;
+  stroke-width: 0.025;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surface {
+    transition: none;
+  }
+}

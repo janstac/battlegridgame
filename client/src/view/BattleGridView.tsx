@@ -1,82 +1,110 @@
 import type {
+  BattleCell,
   BattleSnapshot,
   PlayerId,
   Position,
 } from "@grid-game/shared";
 
-import { BattleCellView } from "./BattleCellView.tsx";
+import {
+  EmptyCellView,
+  OccupiedCellView,
+  type PlayerColorId,
+  WallCellView,
+} from "./BattleCellView.tsx";
+import styles from "./BattleGridView.module.css";
 
 /** Rendering inputs for the authoritative SVG battle grid. */
 export type BattleGridViewProps = Readonly<{
   snapshot: BattleSnapshot;
   localPlayerId: PlayerId;
   localPlayerOnCooldown: boolean;
+  playerColorIds: ReadonlyMap<PlayerId, PlayerColorId>;
   onCellActivate(position: Position): void;
 }>;
-
-function positionKey(position: Position): string {
-  return `${position.x},${position.y}`;
-}
 
 /** Renders the current authoritative grid as a responsive SVG. */
 export function BattleGridView({
   snapshot,
   localPlayerId,
   localPlayerOnCooldown,
+  playerColorIds,
   onCellActivate,
 }: BattleGridViewProps) {
   const { width, height, cells } = snapshot.grid;
-  const pendingByPosition = new Map(
-    snapshot.pendingSplits.map((split) => [
-      positionKey(split.position),
-      split.dueTick,
-    ]),
+  const pendingIndexes = new Set(
+    snapshot.pendingSplits.map(
+      ({ position }) => position.y * width + position.x,
+    ),
   );
-  const rows = Array.from({ length: height }, (_, y) =>
-    cells.slice(y * width, (y + 1) * width),
-  );
+  const interactionDisabled =
+    snapshot.status.kind === "finished" || localPlayerOnCooldown;
 
   return (
     <svg
-      className="battle-grid"
+      className={styles.grid}
       viewBox={`0 0 ${width} ${height}`}
-      role="grid"
-      aria-label={`${width} by ${height} battle grid`}
-      aria-rowcount={height}
-      aria-colcount={width}
       preserveAspectRatio="xMidYMid meet"
     >
       <rect
-        className="battle-grid__backdrop"
+        className={styles.backdrop}
         width={width}
         height={height}
-        role="presentation"
       />
-      {rows.map((row, y) => (
-        <g role="row" aria-rowindex={y + 1} key={y}>
-          {row.map((cell, x) => {
-            // Serialized grids are row-major; no game rule is inferred here.
-            const position = { x, y };
-            const key = positionKey(position);
-            return (
-              <BattleCellView
-                key={key}
-                cell={cell}
-                position={position}
-                players={snapshot.players}
-                localPlayerId={localPlayerId}
-                {...(pendingByPosition.has(key)
-                  ? { pendingDueTick: pendingByPosition.get(key)! }
-                  : {})}
-                disabled={
-                  snapshot.status.kind === "finished" || localPlayerOnCooldown
-                }
-                onActivate={onCellActivate}
-              />
-            );
-          })}
-        </g>
-      ))}
+      {cells.map((cell, index) => {
+        const position = {
+          x: index % width,
+          y: Math.floor(index / width),
+        };
+        const canActivate =
+          !interactionDisabled &&
+          cell.kind === "occupied" &&
+          cell.playerId === localPlayerId;
+        return (
+          <g
+            className={styles.cellPosition}
+            key={index}
+            transform={`translate(${position.x} ${position.y})`}
+          >
+            {renderCell(cell, {
+              canActivate,
+              hasPendingSplit: pendingIndexes.has(index),
+              onActivate: () => onCellActivate(position),
+              playerColorIds,
+            })}
+          </g>
+        );
+      })}
     </svg>
   );
+}
+
+type CellRenderContext = Readonly<{
+  canActivate: boolean;
+  hasPendingSplit: boolean;
+  onActivate(): void;
+  playerColorIds: ReadonlyMap<PlayerId, PlayerColorId>;
+}>;
+
+function renderCell(cell: BattleCell, context: CellRenderContext) {
+  switch (cell.kind) {
+    case "empty":
+      return <EmptyCellView />;
+    case "wall":
+      return <WallCellView />;
+    case "occupied": {
+      const playerColorId = context.playerColorIds.get(cell.playerId);
+      if (playerColorId === undefined) {
+        throw new Error(`Missing color ID for player ${cell.playerId}`);
+      }
+      return (
+        <OccupiedCellView
+          count={cell.count}
+          playerColorId={playerColorId}
+          canActivate={context.canActivate}
+          hasPendingSplit={context.hasPendingSplit}
+          onActivate={context.onActivate}
+        />
+      );
+    }
+  }
 }

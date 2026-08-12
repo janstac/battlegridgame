@@ -1,10 +1,16 @@
+import type { PlayerId } from "@grid-game/shared";
+
 import type { ClientBattleState } from "../model/index.ts";
+import {
+  PLAYER_COLORS,
+  type PlayerColorId,
+} from "./BattleCellView.tsx";
 import { BattleGridView } from "./BattleGridView.tsx";
-import { colorsForPlayer } from "./player-colors.ts";
 import { useClientBattleState } from "./useClientBattleState.ts";
 
 export type BattleViewProps = Readonly<{
   battle: ClientBattleState;
+  playerColorIds: ReadonlyMap<PlayerId, PlayerColorId>;
 }>;
 
 const REJECTION_LABELS = {
@@ -17,7 +23,7 @@ const REJECTION_LABELS = {
 } as const;
 
 /** Renders directly from the client-owned authoritative state projection. */
-export function BattleView({ battle }: BattleViewProps) {
+export function BattleView({ battle, playerColorIds }: BattleViewProps) {
   const state = useClientBattleState(battle);
   const snapshot = state.battle;
   const cooldown = snapshot.cooldowns.find(
@@ -33,7 +39,7 @@ export function BattleView({ battle }: BattleViewProps) {
     : null;
 
   return (
-    <section className="battle-panel" aria-label="Battle">
+    <section className="battle-panel">
       <div className="battle-summary">
         <span>Tick <strong>{state.estimatedTick}</strong></span>
         <span>
@@ -46,9 +52,13 @@ export function BattleView({ battle }: BattleViewProps) {
         </span>
       </div>
 
-      <div className="player-legend" aria-label="Players">
+      <div className="player-legend">
         {snapshot.players.map((playerId) => {
-          const colors = colorsForPlayer(playerId, snapshot.players);
+          const playerColorId = playerColorIds.get(playerId);
+          if (playerColorId === undefined) {
+            throw new Error(`Missing color ID for player ${playerId}`);
+          }
+          const colors = PLAYER_COLORS[playerColorId];
           return (
             <span
               className={
@@ -61,7 +71,6 @@ export function BattleView({ battle }: BattleViewProps) {
               <span
                 className="player-legend__swatch"
                 style={{ backgroundColor: colors.fill }}
-                aria-hidden="true"
               />
               {playerId}
             </span>
@@ -70,12 +79,12 @@ export function BattleView({ battle }: BattleViewProps) {
       </div>
 
       {winner !== null && (
-        <p className="winner-banner" role="status">
+        <p className="winner-banner">
           {winner} wins the battle.
         </p>
       )}
       {state.lastRejection !== null && (
-        <p className="rejection-banner" role="alert">
+        <p className="rejection-banner">
           {REJECTION_LABELS[state.lastRejection.reason]}
         </p>
       )}
@@ -84,6 +93,7 @@ export function BattleView({ battle }: BattleViewProps) {
         snapshot={snapshot}
         localPlayerId={state.localPlayerId}
         localPlayerOnCooldown={localPlayerOnCooldown}
+        playerColorIds={playerColorIds}
         onCellActivate={(position) => {
           void battle.increment(position);
         }}

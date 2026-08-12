@@ -7,7 +7,16 @@ import {
   DemoControls,
   type DemoRuntime,
 } from "./demo/index.ts";
-import { BattleView } from "./view/index.ts";
+import {
+  BattleView,
+  type PlayerColorId,
+} from "./view/index.ts";
+
+const DEMO_PLAYER_COLOR_IDS: ReadonlyMap<PlayerId, PlayerColorId> = new Map([
+  [DEMO_PLAYERS[0], 0],
+  [DEMO_PLAYERS[1], 1],
+  [DEMO_PLAYERS[2], 2],
+]);
 
 /** Root composition for the standalone local battle demo. */
 export function App() {
@@ -78,7 +87,10 @@ export function App() {
       {runtime === null ? (
         <p className="loading-status">Starting local battle…</p>
       ) : (
-        <BattleView battle={runtime.battle} />
+        <BattleView
+          battle={runtime.battle}
+          playerColorIds={DEMO_PLAYER_COLOR_IDS}
+        />
       )}
     </main>
   );

@@ -16,7 +16,7 @@ export function DemoControls({
   onReset,
 }: DemoControlsProps) {
   return (
-    <section className="demo-controls" aria-label="Demo controls">
+    <section className="demo-controls">
       <label htmlFor="active-player">Act as</label>
       <select
         id="active-player"
