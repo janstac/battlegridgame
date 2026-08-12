@@ -75,6 +75,9 @@ export function OccupiedCellView({
       <CellSurface
         fill={colors.fill}
         stroke={colors.stroke}
+        canActivate={canActivate}
+        onActivate={onActivate}
+        onKeyDown={handleKeyDown}
       />
       <text
         className={styles.count}
@@ -94,18 +97,6 @@ export function OccupiedCellView({
           height="1"
         />
       )}
-      {canActivate && (
-        <rect
-          className={styles.hitTarget}
-          x="0"
-          y="0"
-          width="1"
-          height="1"
-          tabIndex={0}
-          onClick={onActivate}
-          onKeyDown={handleKeyDown}
-        />
-      )}
     </g>
   );
 }
@@ -113,9 +104,18 @@ export function OccupiedCellView({
 type CellSurfaceProps = Readonly<{
   fill?: string;
   stroke?: string;
+  canActivate?: boolean;
+  onActivate?: () => void;
+  onKeyDown?: (event: KeyboardEvent<SVGRectElement>) => void;
 }>;
 
-function CellSurface({ fill, stroke }: CellSurfaceProps) {
+function CellSurface({
+  fill,
+  stroke,
+  canActivate = false,
+  onActivate,
+  onKeyDown,
+}: CellSurfaceProps) {
   return (
     <rect
       className={styles.surface}
@@ -126,6 +126,9 @@ function CellSurface({ fill, stroke }: CellSurfaceProps) {
       rx="0.1"
       {...(fill === undefined ? {} : { fill })}
       {...(stroke === undefined ? {} : { stroke })}
+      tabIndex={canActivate ? 0 : undefined}
+      onClick={canActivate ? onActivate : undefined}
+      onKeyDown={canActivate ? onKeyDown : undefined}
     />
   );
 }

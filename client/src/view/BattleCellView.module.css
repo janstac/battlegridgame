@@ -30,16 +30,10 @@
 }
 
 .interactive:hover .surface,
-.interactive:focus-within .surface {
+.surface:focus-visible {
   filter: brightness(1.18);
   stroke: #ffffff;
   stroke-width: 0.065;
-}
-
-.hitTarget {
-  fill: transparent;
-  pointer-events: all;
-  outline: none;
 }
 
 .count {
