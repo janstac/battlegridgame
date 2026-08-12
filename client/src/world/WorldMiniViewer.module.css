@@ -1,0 +1,14 @@
+.viewer {
+  display: grid;
+  gap: .45rem;
+  width: 12rem;
+  padding: .65rem;
+  border: 1px solid #344760;
+  border-radius: .75rem;
+  color: #dce6f6;
+  background: #111c2c;
+  cursor: pointer;
+}
+.viewer:hover, .viewer:focus-visible { border-color: #78a0ff; }
+.label { font-size: .76rem; font-weight: 700; text-align: left; }
+.map { display: block; aspect-ratio: 1; pointer-events: none; }

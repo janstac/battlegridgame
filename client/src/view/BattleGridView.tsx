@@ -1,7 +1,7 @@
 import type {
   BattleCell,
+  BattleParticipantId,
   BattleSnapshot,
-  PlayerId,
   Position,
 } from "@grid-game/shared";
 
@@ -16,18 +16,18 @@ import styles from "./BattleGridView.module.css";
 /** Rendering inputs for the authoritative SVG battle grid. */
 export type BattleGridViewProps = Readonly<{
   snapshot: BattleSnapshot;
-  localPlayerId: PlayerId;
-  localPlayerOnCooldown: boolean;
-  playerColorIds: ReadonlyMap<PlayerId, PlayerColorId>;
+  localParticipantId: BattleParticipantId;
+  localInteractionDisabled: boolean;
+  participantColorIds: ReadonlyMap<BattleParticipantId, PlayerColorId>;
   onCellActivate(position: Position): void;
 }>;
 
 /** Renders the current authoritative grid as a responsive SVG. */
 export function BattleGridView({
   snapshot,
-  localPlayerId,
-  localPlayerOnCooldown,
-  playerColorIds,
+  localParticipantId,
+  localInteractionDisabled,
+  participantColorIds,
   onCellActivate,
 }: BattleGridViewProps) {
   const { width, height, cells } = snapshot.grid;
@@ -37,7 +37,7 @@ export function BattleGridView({
     ),
   );
   const interactionDisabled =
-    snapshot.status.kind === "finished" || localPlayerOnCooldown;
+    snapshot.status.kind === "finished" || localInteractionDisabled;
 
   return (
     <svg
@@ -58,7 +58,7 @@ export function BattleGridView({
         const canActivate =
           !interactionDisabled &&
           cell.kind === "occupied" &&
-          cell.playerId === localPlayerId;
+          cell.participantId === localParticipantId;
         return (
           <g
             className={styles.cellPosition}
@@ -69,7 +69,7 @@ export function BattleGridView({
               canActivate,
               hasPendingSplit: pendingIndexes.has(index),
               onActivate: () => onCellActivate(position),
-              playerColorIds,
+              participantColorIds,
             })}
           </g>
         );
@@ -82,7 +82,7 @@ type CellRenderContext = Readonly<{
   canActivate: boolean;
   hasPendingSplit: boolean;
   onActivate(): void;
-  playerColorIds: ReadonlyMap<PlayerId, PlayerColorId>;
+  participantColorIds: ReadonlyMap<BattleParticipantId, PlayerColorId>;
 }>;
 
 function renderCell(cell: BattleCell, context: CellRenderContext) {
@@ -92,9 +92,9 @@ function renderCell(cell: BattleCell, context: CellRenderContext) {
     case "wall":
       return <WallCellView />;
     case "occupied": {
-      const playerColorId = context.playerColorIds.get(cell.playerId);
+      const playerColorId = context.participantColorIds.get(cell.participantId);
       if (playerColorId === undefined) {
-        throw new Error(`Missing color ID for player ${cell.playerId}`);
+        throw new Error(`Missing color ID for participant ${cell.participantId}`);
       }
       return (
         <OccupiedCellView

@@ -1,9 +1,11 @@
-import type { PlayerId } from "@grid-game/shared";
-import { useEffect, useReducer, useRef, useState } from "react";
+import type { BattleParticipantId, PlayerId } from "@grid-game/shared";
+import { useEffect, useRef, useState } from "react";
 
 import {
   createDemoRuntime,
+  DEMO_PARTICIPANT_IDS,
   DEMO_PLAYERS,
+  DEMO_ROSTER,
   DemoControls,
   type DemoRuntime,
 } from "../demo/index.ts";
@@ -13,11 +15,14 @@ import { StatusNotice } from "../ui/StatusNotice.tsx";
 import { BattleView, type PlayerColorId } from "../view/index.ts";
 import styles from "./LocalGame.module.css";
 
-const DEMO_PLAYER_COLOR_IDS: ReadonlyMap<PlayerId, PlayerColorId> = new Map([
-  [DEMO_PLAYERS[0], 0],
-  [DEMO_PLAYERS[1], 1],
-  [DEMO_PLAYERS[2], 2],
+const DEMO_PARTICIPANT_COLOR_IDS: ReadonlyMap<BattleParticipantId, PlayerColorId> = new Map([
+  [DEMO_PARTICIPANT_IDS[0], 0],
+  [DEMO_PARTICIPANT_IDS[1], 1],
+  [DEMO_PARTICIPANT_IDS[2], 2],
 ]);
+const DEMO_PARTICIPANT_LABELS = new Map(
+  [...DEMO_ROSTER].map(([playerId, participantId]) => [participantId, playerId]),
+);
 
 export type LocalGameProps = Readonly<{
   onBack(): void;
@@ -26,20 +31,30 @@ export type LocalGameProps = Readonly<{
 /** Owns the complete lifecycle of the replaceable local battle authority. */
 export function LocalGame({ onBack }: LocalGameProps) {
   const [runtime, setRuntime] = useState<DemoRuntime | null>(null);
+  const [selectedPlayerId, setSelectedPlayerId] = useState<PlayerId>(DEMO_PLAYERS[0]);
+  const selectedPlayerRef = useRef<PlayerId>(DEMO_PLAYERS[0]);
   const runtimeRef = useRef<DemoRuntime | null>(null);
   const runtimeGeneration = useRef(0);
-  const [, refreshControls] = useReducer((value: number) => value + 1, 0);
+
+  async function createAndInstallRuntime(generation: number, initialPlayerId: PlayerId) {
+    let playerId = initialPlayerId;
+    let nextRuntime = await createDemoRuntime(playerId);
+    while (playerId !== selectedPlayerRef.current) {
+      await nextRuntime.battle.dispose();
+      playerId = selectedPlayerRef.current;
+      nextRuntime = await createDemoRuntime(playerId);
+    }
+    if (generation !== runtimeGeneration.current) {
+      await nextRuntime.battle.dispose();
+      return;
+    }
+    runtimeRef.current = nextRuntime;
+    setRuntime(nextRuntime);
+  }
 
   useEffect(() => {
     const generation = ++runtimeGeneration.current;
-    void createDemoRuntime().then((nextRuntime) => {
-      if (generation !== runtimeGeneration.current) {
-        void nextRuntime.battle.dispose();
-        return;
-      }
-      runtimeRef.current = nextRuntime;
-      setRuntime(nextRuntime);
-    });
+    void createAndInstallRuntime(generation, selectedPlayerRef.current);
     return () => {
       runtimeGeneration.current += 1;
       const current = runtimeRef.current;
@@ -49,28 +64,21 @@ export function LocalGame({ onBack }: LocalGameProps) {
   }, []);
 
   const selectPlayer = (playerId: PlayerId) => {
-    runtime?.battle.setLocalPlayerId(playerId);
-    // Identity lives in ClientBattleState; refresh the selector outside the
-    // subscribed BattleView after changing it.
-    refreshControls();
+    if (playerId === selectedPlayerId) return;
+    selectedPlayerRef.current = playerId;
+    setSelectedPlayerId(playerId);
+    replaceRuntime(playerId);
   };
 
-  const reset = () => {
+  const replaceRuntime = (playerId: PlayerId) => {
     if (runtime === null) return;
-    const localPlayerId = runtime.battle.localPlayerId;
     const generation = ++runtimeGeneration.current;
     runtimeRef.current = null;
     setRuntime(null);
-    void runtime.battle.dispose().then(async () => {
-      const nextRuntime = await createDemoRuntime(localPlayerId);
-      if (generation !== runtimeGeneration.current) {
-        await nextRuntime.battle.dispose();
-        return;
-      }
-      runtimeRef.current = nextRuntime;
-      setRuntime(nextRuntime);
-    });
+    void runtime.battle.dispose().then(() => createAndInstallRuntime(generation, playerId));
   };
+
+  const reset = () => replaceRuntime(selectedPlayerId);
 
   return (
     <GamePage
@@ -85,7 +93,7 @@ export function LocalGame({ onBack }: LocalGameProps) {
     >
       <DemoControls
         players={DEMO_PLAYERS}
-        selectedPlayerId={runtime?.battle.localPlayerId ?? DEMO_PLAYERS[0]}
+        selectedPlayerId={selectedPlayerId}
         onSelectPlayer={selectPlayer}
         onReset={reset}
       />
@@ -102,7 +110,8 @@ export function LocalGame({ onBack }: LocalGameProps) {
       ) : (
         <BattleView
           battle={runtime.battle}
-          playerColorIds={DEMO_PLAYER_COLOR_IDS}
+          participantColorIds={DEMO_PARTICIPANT_COLOR_IDS}
+          participantLabels={DEMO_PARTICIPANT_LABELS}
         />
       )}
     </GamePage>

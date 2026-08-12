@@ -1,0 +1,43 @@
+.shell { position: relative; }
+.viewport {
+  position: relative;
+  height: min(68vh, 46rem);
+  min-height: 24rem;
+  overflow: hidden;
+  border: 1px solid #33445e;
+  border-radius: 1rem;
+  background: #080e19;
+  touch-action: none;
+  cursor: grab;
+}
+.viewport:active { cursor: grabbing; }
+.content {
+  position: absolute;
+  width: 640px;
+  height: 640px;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.controls {
+  position: absolute;
+  z-index: 2;
+  top: 0.7rem;
+  right: 0.7rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem;
+  border-radius: 0.6rem;
+  background: rgb(8 14 25 / 88%);
+}
+.controls button {
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid #526681;
+  border-radius: 0.4rem;
+  color: #fff;
+  background: #1b2a40;
+  cursor: pointer;
+}
+.controls output { min-width: 3.3rem; color: #c3cee0; text-align: center; font-size: .75rem; }
+.hint { margin: .6rem 0 0; color: #8f9cb0; font-size: .78rem; }

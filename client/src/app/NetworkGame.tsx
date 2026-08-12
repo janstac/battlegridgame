@@ -1,8 +1,19 @@
-import type { PlayerId } from "@grid-game/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type {
+  BattleId,
+  BattleParticipantId,
+  ChallengeId,
+  PlayerId,
+  Position,
+  WorldCell,
+} from "@grid-game/shared";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { ClientBattleState } from "../model/index.ts";
-import { NetworkLobby } from "../network/NetworkLobby.tsx";
+import {
+  BattleWorkspace,
+  moveBattle,
+  type BattleTileModel,
+} from "../battle/index.ts";
+import { ClientBattleState, type ClientWorldState } from "../model/index.ts";
 import { getNetworkUrl } from "../network/networkUrl.ts";
 import {
   NetworkClient,
@@ -12,201 +23,275 @@ import {
 import { ActionButton } from "../ui/ActionButton.tsx";
 import { GamePage } from "../ui/GamePage.tsx";
 import { StatusNotice } from "../ui/StatusNotice.tsx";
-import { BattleView, type PlayerColorId } from "../view/index.ts";
+import type { PlayerColorId } from "../view/index.ts";
+import {
+  WorldGridView,
+  WorldMiniViewer,
+  WorldViewport,
+  worldPlayerColor,
+} from "../world/index.ts";
 import styles from "./NetworkGame.module.css";
 
-type NetworkScreen =
+type ConnectionState =
   | { kind: "connecting" }
-  | {
-    kind: "lobby";
-    playerIds: readonly PlayerId[];
-    localPlayerId: PlayerId;
-    selectedPlayerIds: ReadonlySet<PlayerId>;
-    busy: boolean;
-    error: string | null;
-  }
-  | { kind: "waiting" }
-  | {
-    kind: "battle";
-    battle: ClientBattleState;
-    playerColorIds: ReadonlyMap<PlayerId, PlayerColorId>;
-  }
+  | { kind: "ready"; client: NetworkClient }
   | { kind: "error"; message: string };
 
-export type NetworkGameProps = Readonly<{
-  onBack(): void;
-}>;
+type ActiveScreen = "world" | "battles";
+
+export type NetworkGameProps = Readonly<{ onBack(): void }>;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "An unexpected network error occurred.";
 }
 
-function normalizePlayers(
-  playerIds: readonly PlayerId[],
-  localPlayerId: PlayerId,
-): readonly PlayerId[] {
-  return [...new Set([localPlayerId, ...playerIds])];
+function createBattleModel(session: NetworkBattleSession): BattleTileModel {
+  const battle = new ClientBattleState(session, session.localParticipantId);
+  const participantColorIds = new Map<BattleParticipantId, PlayerColorId>();
+  const participantLabels = new Map<BattleParticipantId, string>();
+  session.roster.forEach(({ participantId, playerId }, index) => {
+    participantColorIds.set(participantId, index as PlayerColorId);
+    participantLabels.set(participantId, playerId);
+  });
+  return {
+    battleId: session.battleId,
+    battle,
+    worldPosition: session.worldPosition,
+    participantColorIds,
+    participantLabels,
+  };
 }
 
-type NetworkScreenViewProps = Readonly<{
-  screen: NetworkScreen;
-  onRefresh(): void;
-  onTogglePlayer(playerId: PlayerId): void;
-  onCreate(): void;
-  onReconnect(): void;
-}>;
+function useWorldState(world: ClientWorldState) {
+  return useSyncExternalStore(world.subscribe, world.getSnapshot, world.getSnapshot);
+}
 
-function NetworkScreenView({
-  screen,
-  onRefresh,
-  onTogglePlayer,
-  onCreate,
-  onReconnect,
-}: NetworkScreenViewProps) {
-  switch (screen.kind) {
-    case "connecting":
-      return (
-        <StatusNotice kind="progress">
-          Connecting to the game server…
-        </StatusNotice>
-      );
-    case "lobby":
-      return (
-        <NetworkLobby
-          playerIds={screen.playerIds}
-          localPlayerId={screen.localPlayerId}
-          selectedPlayerIds={screen.selectedPlayerIds}
-          busy={screen.busy}
-          error={screen.error}
-          onTogglePlayer={onTogglePlayer}
-          onRefresh={onRefresh}
-          onCreate={onCreate}
-        />
-      );
-    case "waiting":
-      return (
-        <StatusNotice kind="progress">
-          Creating battle and waiting for the server…
-        </StatusNotice>
-      );
-    case "battle":
-      return (
-        <BattleView
-          battle={screen.battle}
-          playerColorIds={screen.playerColorIds}
-        />
-      );
-    case "error":
-      return (
-        <>
-          <StatusNotice kind="error">{screen.message}</StatusNotice>
-          <ActionButton
-            className={styles.reconnectAction}
-            type="button"
-            onClick={onReconnect}
-          >
-            Reconnect
-          </ActionButton>
-        </>
-      );
+function positionIndex(position: Position, width: number): number {
+  return position.y * width + position.x;
+}
+
+function WorldDetail({
+  cell,
+  position,
+  localPlayerId,
+  busy,
+  onChallenge,
+  onJoin,
+  onLeave,
+}: Readonly<{
+  cell: WorldCell;
+  position: Position;
+  localPlayerId: PlayerId;
+  busy: boolean;
+  onChallenge(): void;
+  onJoin(challengeId: ChallengeId): void;
+  onLeave(challengeId: ChallengeId): void;
+}>) {
+  return (
+    <aside className={styles.worldDetail} aria-live="polite">
+      <div>
+        <span className={styles.coordinate}>Cell {position.x + 1}, {position.y + 1}</span>
+        {cell.kind === "unoccupied" && <strong>Unoccupied</strong>}
+        {cell.kind === "occupied" && <strong>Owned by {cell.playerId}</strong>}
+        {cell.kind === "challengePending" && <strong>Challenge gathering players</strong>}
+        {cell.kind === "battle" && <strong>Battle in progress</strong>}
+      </div>
+      {cell.kind === "occupied" && cell.playerId !== localPlayerId && (
+        <ActionButton type="button" disabled={busy} onClick={onChallenge}>Challenge this cell</ActionButton>
+      )}
+      {cell.kind === "occupied" && cell.playerId === localPlayerId && (
+        <span className={styles.owned}>This is your cell.</span>
+      )}
+      {cell.kind === "challengePending" && (
+        <div className={styles.challengeDetail}>
+          <span>{cell.participantIds.length}/4 participants</span>
+          <div className={styles.roster}>
+            {cell.participantIds.map((playerId) => (
+              <span key={playerId}><i style={{ background: worldPlayerColor(playerId) }} />{playerId}</span>
+            ))}
+          </div>
+          {cell.participantIds.includes(localPlayerId) ? (
+            <ActionButton variant="secondary" type="button" disabled={busy} onClick={() => onLeave(cell.challengeId)}>
+              Leave challenge
+            </ActionButton>
+          ) : (
+            <ActionButton type="button" disabled={busy || cell.participantIds.length >= 4} onClick={() => onJoin(cell.challengeId)}>
+              {cell.participantIds.length >= 4 ? "Challenge full" : "Join challenge"}
+            </ActionButton>
+          )}
+        </div>
+      )}
+      {cell.kind === "battle" && (
+        <div className={styles.challengeDetail}>
+          <span>{cell.playerIds.length} participants</span>
+          <div className={styles.roster}>
+            {cell.playerIds.map((playerId) => (
+              <span key={playerId}><i style={{ background: worldPlayerColor(playerId) }} />{playerId}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function WorldScreen({
+  world,
+  localPlayerId,
+  now,
+}: Readonly<{ world: NetworkClient["world"]; localPlayerId: PlayerId; now: number }>) {
+  const state = useWorldState(world.state);
+  const [selected, setSelected] = useState<Position | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!state.ready || state.snapshot === null) {
+    return <StatusNotice kind="progress">Loading the World…</StatusNotice>;
   }
+  const snapshot = state.snapshot;
+  const selectedCell = selected === null
+    ? null
+    : snapshot.grid.cells[positionIndex(selected, snapshot.grid.width)] ?? null;
+  const run = (command: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    void command().catch((caught: unknown) => setError(errorMessage(caught))).finally(() => setBusy(false));
+  };
+  return (
+    <section>
+      {state.resyncing && <StatusNotice kind="progress">Resynchronizing the World…</StatusNotice>}
+      {error !== null && <StatusNotice kind="error">{error}</StatusNotice>}
+      <div className={styles.worldLayout}>
+        <WorldViewport>
+          <WorldGridView
+            snapshot={snapshot}
+            localPlayerId={localPlayerId}
+            now={now}
+            interactive
+            onCellActivate={setSelected}
+          />
+        </WorldViewport>
+        {selected !== null && selectedCell !== null ? (
+          <WorldDetail
+            cell={selectedCell}
+            position={selected}
+            localPlayerId={localPlayerId}
+            busy={busy}
+            onChallenge={() => run(() => world.challengeCell(selected))}
+            onJoin={(challengeId) => run(() => world.joinChallenge(challengeId))}
+            onLeave={(challengeId) => run(() => world.leaveChallenge(challengeId))}
+          />
+        ) : (
+          <aside className={styles.worldDetail}>Select an occupied or pending-challenge cell.</aside>
+        )}
+      </div>
+    </section>
+  );
 }
 
-/** Owns one server connection and promotes joined sessions into battle state. */
+function BattlesScreen({
+  client,
+  battles,
+  order,
+  now,
+  onOpenWorld,
+  onMove,
+}: Readonly<{
+  client: NetworkClient;
+  battles: ReadonlyMap<BattleId, BattleTileModel>;
+  order: readonly BattleId[];
+  now: number;
+  onOpenWorld(): void;
+  onMove(battleId: BattleId, direction: -1 | 1): void;
+}>) {
+  const world = useWorldState(client.world.state);
+  return (
+    <div className={styles.battlesLayout}>
+      {world.snapshot !== null && (
+        <WorldMiniViewer snapshot={world.snapshot} localPlayerId={client.playerId} now={now} onOpen={onOpenWorld} />
+      )}
+      <div className={styles.workspaceWrap}>
+        <BattleWorkspace
+          battles={battles}
+          order={order}
+          onMove={onMove}
+          onLeave={(battleId) => {
+            const model = battles.get(battleId);
+            if (model !== undefined) void model.battle.dispose().catch(() => undefined);
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Owns the World projection and every battle joined through one connection. */
 export function NetworkGame({ onBack }: NetworkGameProps) {
-  const [screen, setScreen] = useState<NetworkScreen>({ kind: "connecting" });
+  const [connection, setConnection] = useState<ConnectionState>({ kind: "connecting" });
+  const [activeScreen, setActiveScreen] = useState<ActiveScreen>("world");
+  const [battles, setBattles] = useState<ReadonlyMap<BattleId, BattleTileModel>>(new Map());
+  const [battleOrder, setBattleOrder] = useState<readonly BattleId[]>([]);
+  const [now, setNow] = useState(Date.now());
   const generationRef = useRef(0);
   const clientRef = useRef<NetworkClient | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
-  const battleRef = useRef<ClientBattleState | null>(null);
+  const battlesRef = useRef(new Map<BattleId, BattleTileModel>());
 
   const releaseResources = useCallback(() => {
     unsubscribeRef.current?.();
     unsubscribeRef.current = null;
-    const battle = battleRef.current;
-    battleRef.current = null;
     const client = clientRef.current;
     clientRef.current = null;
-    if (battle !== null) void battle.dispose().catch(() => undefined);
     if (client !== null) void client.close().catch(() => undefined);
+    for (const model of battlesRef.current.values()) void model.battle.dispose().catch(() => undefined);
+    battlesRef.current = new Map();
+    setBattles(new Map());
+    setBattleOrder([]);
   }, []);
 
   const connect = useCallback(() => {
     const generation = ++generationRef.current;
     releaseResources();
-    setScreen({ kind: "connecting" });
-
+    setConnection({ kind: "connecting" });
     void NetworkClient.connect(getNetworkUrl()).then(async (client) => {
-      if (generation !== generationRef.current) {
-        await client.close();
-        return;
-      }
+      if (generation !== generationRef.current) return await client.close();
       clientRef.current = client;
-
       const enterBattle = (session: NetworkBattleSession) => {
-        if (generation !== generationRef.current || battleRef.current !== null) return;
-        const players = session.initialSnapshot.players;
-        if (players.length > 4) {
-          void session.close().catch(() => undefined);
-          setScreen({ kind: "error", message: "This battle has too many players to display." });
-          return;
-        }
+        if (generation !== generationRef.current) return;
         try {
-          const battle = new ClientBattleState(session, session.playerId);
-          const playerColorIds = new Map<PlayerId, PlayerColorId>();
-          players.forEach((playerId, index) => {
-            playerColorIds.set(playerId, index as PlayerColorId);
-          });
-          battleRef.current = battle;
-          setScreen({ kind: "battle", battle, playerColorIds });
+          const model = createBattleModel(session);
+          battlesRef.current.set(session.battleId, model);
+          setBattles(new Map(battlesRef.current));
+          setBattleOrder((current) => current.includes(session.battleId) ? current : [...current, session.battleId]);
         } catch (error) {
           void session.close().catch(() => undefined);
-          setScreen({ kind: "error", message: errorMessage(error) });
+          setConnection({ kind: "error", message: errorMessage(error) });
         }
       };
-
       const receive = (event: NetworkClientEvent) => {
         if (generation !== generationRef.current) return;
-        if (event.type === "battleJoined") {
-          enterBattle(event.session);
-        } else if (event.type === "connectionClosed") {
-          const battle = battleRef.current;
-          battleRef.current = null;
-          if (battle !== null) void battle.dispose().catch(() => undefined);
-          setScreen({
-            kind: "error",
-            message: event.error?.message ?? "The server connection closed.",
-          });
+        if (event.type === "battleJoined") enterBattle(event.session);
+        else if (event.type === "battleLeft") {
+          const model = battlesRef.current.get(event.battleId);
+          battlesRef.current.delete(event.battleId);
+          if (model !== undefined) void model.battle.dispose().catch(() => undefined);
+          setBattles(new Map(battlesRef.current));
+          setBattleOrder((current) => current.filter((battleId) => battleId !== event.battleId));
+        } else {
+          for (const model of battlesRef.current.values()) {
+            void model.battle.dispose().catch(() => undefined);
+          }
+          battlesRef.current = new Map();
+          setBattles(new Map());
+          setBattleOrder([]);
+          setConnection({ kind: "error", message: event.error?.message ?? "The server connection closed." });
         }
       };
       unsubscribeRef.current = client.subscribe(receive);
-
-      try {
-        const playerIds = normalizePlayers(
-          await client.debugGetPlayerIds(),
-          client.playerId,
-        );
-        if (
-          generation !== generationRef.current
-          || battleRef.current !== null
-        ) return;
-        setScreen({
-          kind: "lobby",
-          playerIds,
-          localPlayerId: client.playerId,
-          selectedPlayerIds: new Set([client.playerId]),
-          busy: false,
-          error: null,
-        });
-      } catch (error) {
-        if (generation === generationRef.current && battleRef.current === null) {
-          setScreen({ kind: "error", message: errorMessage(error) });
-        }
-      }
+      for (const session of client.getSessions()) enterBattle(session);
+      await client.world.ready;
+      if (generation === generationRef.current) setConnection({ kind: "ready", client });
     }).catch((error: unknown) => {
-      if (generation === generationRef.current) {
-        setScreen({ kind: "error", message: errorMessage(error) });
-      }
+      if (generation === generationRef.current) setConnection({ kind: "error", message: errorMessage(error) });
     });
   }, [releaseResources]);
 
@@ -218,101 +303,48 @@ export function NetworkGame({ onBack }: NetworkGameProps) {
     };
   }, [connect, releaseResources]);
 
-  const refreshPlayers = () => {
-    const client = clientRef.current;
-    if (client === null || screen.kind !== "lobby" || screen.busy) return;
-    const generation = generationRef.current;
-    setScreen({ ...screen, busy: true, error: null });
-    void client.debugGetPlayerIds().then((discovered) => {
-      if (generation !== generationRef.current || battleRef.current !== null) return;
-      const playerIds = normalizePlayers(discovered, client.playerId);
-      setScreen((current) => {
-        if (current.kind !== "lobby") return current;
-        const available = new Set(playerIds);
-        const selected = new Set(
-          [...current.selectedPlayerIds].filter((playerId) => available.has(playerId)),
-        );
-        selected.add(client.playerId);
-        return {
-          ...current,
-          playerIds,
-          selectedPlayerIds: selected,
-          busy: false,
-          error: null,
-        };
-      });
-    }).catch((error: unknown) => {
-      if (generation !== generationRef.current || battleRef.current !== null) return;
-      setScreen((current) => current.kind === "lobby"
-        ? { ...current, busy: false, error: errorMessage(error) }
-        : current);
-    });
-  };
+  useEffect(() => {
+    const timer = globalThis.setInterval(() => setNow(Date.now()), 250);
+    return () => globalThis.clearInterval(timer);
+  }, []);
 
-  const togglePlayer = (playerId: PlayerId) => {
-    setScreen((current) => {
-      if (
-        current.kind !== "lobby"
-        || current.busy
-        || playerId === current.localPlayerId
-        || !current.playerIds.includes(playerId)
-      ) return current;
-      const selected = new Set(current.selectedPlayerIds);
-      if (selected.has(playerId)) {
-        selected.delete(playerId);
-      } else if (selected.size < 4) {
-        selected.add(playerId);
-      }
-      return { ...current, selectedPlayerIds: selected, error: null };
-    });
-  };
-
-  const createBattle = () => {
-    const client = clientRef.current;
-    if (client === null || screen.kind !== "lobby" || screen.busy) return;
-    const selected = [...screen.selectedPlayerIds];
-    if (selected.length < 2 || selected.length > 4) {
-      setScreen({ ...screen, error: "Choose between 2 and 4 players." });
-      return;
-    }
-    const generation = generationRef.current;
-    setScreen({ kind: "waiting" });
-    // battleJoined is canonical for both creators and invited peers. The
-    // request result only tells us whether creation was rejected.
-    void client.debugCreateBattle(selected).catch((error: unknown) => {
-      if (generation !== generationRef.current || battleRef.current !== null) return;
-      setScreen({
-        kind: "lobby",
-        playerIds: screen.playerIds,
-        localPlayerId: screen.localPlayerId,
-        selectedPlayerIds: screen.selectedPlayerIds,
-        busy: false,
-        error: errorMessage(error),
-      });
-    });
-  };
-
+  const ready = connection.kind === "ready" ? connection.client : null;
   return (
     <GamePage
-      eyebrow="Server-backed game"
+      eyebrow="Server-backed World"
       title="Grid Battle"
-      description="Create a battle with connected players, or wait to be invited."
+      description={ready === null ? "Connecting to the shared World." : `Connected as ${ready.playerId}. Challenge a claimed cell or join a pending fight.`}
     >
-      <NetworkScreenView
-        screen={screen}
-        onRefresh={refreshPlayers}
-        onTogglePlayer={togglePlayer}
-        onCreate={createBattle}
-        onReconnect={connect}
-      />
-      <ActionButton
-        className={styles.backAction}
-        variant="secondary"
-        type="button"
-        onClick={onBack}
-      >
-        Back to game modes
-      </ActionButton>
+      {connection.kind === "connecting" && <StatusNotice kind="progress">Connecting to the game server…</StatusNotice>}
+      {connection.kind === "error" && (
+        <div>
+          <StatusNotice kind="error">{connection.message}</StatusNotice>
+          <ActionButton className={styles.reconnectAction} type="button" onClick={connect}>Reconnect</ActionButton>
+        </div>
+      )}
+      {ready !== null && (
+        <>
+          <nav className={styles.tabs} aria-label="Network game views">
+            <button type="button" aria-current={activeScreen === "world" ? "page" : undefined} onClick={() => setActiveScreen("world")}>World</button>
+            <button type="button" aria-current={activeScreen === "battles" ? "page" : undefined} onClick={() => setActiveScreen("battles")}>
+              Battles <span>{battles.size}</span>
+            </button>
+          </nav>
+          {activeScreen === "world" ? (
+            <WorldScreen world={ready.world} localPlayerId={ready.playerId} now={now} />
+          ) : (
+            <BattlesScreen
+              client={ready}
+              battles={battles}
+              order={battleOrder}
+              now={now}
+              onOpenWorld={() => setActiveScreen("world")}
+              onMove={(battleId, direction) => setBattleOrder((current) => moveBattle(current, battleId, direction))}
+            />
+          )}
+        </>
+      )}
+      <ActionButton className={styles.backAction} variant="secondary" type="button" onClick={onBack}>Back to game modes</ActionButton>
     </GamePage>
   );
 }

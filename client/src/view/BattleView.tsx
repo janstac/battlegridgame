@@ -1,4 +1,4 @@
-import type { PlayerId } from "@grid-game/shared";
+import type { BattleParticipantId } from "@grid-game/shared";
 
 import type { ClientBattleState } from "../model/index.ts";
 import {
@@ -11,12 +11,14 @@ import { useClientBattleState } from "./useClientBattleState.ts";
 
 export type BattleViewProps = Readonly<{
   battle: ClientBattleState;
-  playerColorIds: ReadonlyMap<PlayerId, PlayerColorId>;
+  participantColorIds: ReadonlyMap<BattleParticipantId, PlayerColorId>;
+  participantLabels?: ReadonlyMap<BattleParticipantId, string>;
 }>;
 
 const REJECTION_LABELS = {
   battleFinished: "The battle is already finished.",
-  unknownPlayer: "That player is not part of this battle.",
+  unknownParticipant: "That participant is not part of this battle.",
+  participantInactive: "You are no longer active in this battle.",
   outOfBounds: "That cell is outside the battle grid.",
   notOccupied: "Choose a cell that already belongs to the active player.",
   notOwner: "That cell belongs to another player.",
@@ -24,17 +26,26 @@ const REJECTION_LABELS = {
 } as const;
 
 /** Renders directly from the client-owned authoritative state projection. */
-export function BattleView({ battle, playerColorIds }: BattleViewProps) {
+export function BattleView({
+  battle,
+  participantColorIds,
+  participantLabels,
+}: BattleViewProps) {
   const state = useClientBattleState(battle);
   const snapshot = state.battle;
   const cooldown = snapshot.cooldowns.find(
-    (entry) => entry.playerId === state.localPlayerId,
+    (entry) => entry.participantId === state.localParticipantId,
   );
   const cooldownTicks = Math.max(
     0,
     (cooldown?.nextActionTick ?? 0) - state.estimatedTick,
   );
   const localPlayerOnCooldown = cooldownTicks > 0;
+  const localParticipant = snapshot.participants.find(
+    ({ participantId }) => participantId === state.localParticipantId,
+  );
+  const localInteractionDisabled = localPlayerOnCooldown
+    || localParticipant?.status !== "active";
   const winner = snapshot.status.kind === "finished"
     ? snapshot.status.winnerId
     : null;
@@ -54,32 +65,35 @@ export function BattleView({ battle, playerColorIds }: BattleViewProps) {
       </div>
 
       <div className={styles.playerLegend}>
-        {snapshot.players.map((playerId) => {
-          const playerColorId = playerColorIds.get(playerId);
+        {snapshot.participants.map(({ participantId, status }) => {
+          const playerColorId = participantColorIds.get(participantId);
           if (playerColorId === undefined) {
-            throw new Error(`Missing color ID for player ${playerId}`);
+            throw new Error(`Missing color ID for participant ${participantId}`);
           }
           const colors = PLAYER_COLORS[playerColorId];
           return (
             <span
               className={`${styles.player} ${
-                playerId === state.localPlayerId ? styles.activePlayer : ""
+                participantId === state.localParticipantId ? styles.activePlayer : ""
               }`}
-              key={playerId}
+              key={participantId}
             >
               <span
                 className={styles.swatch}
                 style={{ backgroundColor: colors.fill }}
               />
-              {playerId}
+              {participantLabels?.get(participantId) ?? `Player ${participantId + 1}`}
+              {status === "active" ? "" : ` (${status})`}
             </span>
           );
         })}
       </div>
 
-      {winner !== null && (
+      {snapshot.status.kind === "finished" && (
         <p className={styles.winner}>
-          {winner} wins the battle.
+          {winner === null
+            ? "The battle ended without a winner."
+            : `${participantLabels?.get(winner) ?? `Player ${winner + 1}`} wins the battle.`}
         </p>
       )}
       {state.lastRejection !== null && (
@@ -90,9 +104,9 @@ export function BattleView({ battle, playerColorIds }: BattleViewProps) {
 
       <BattleGridView
         snapshot={snapshot}
-        localPlayerId={state.localPlayerId}
-        localPlayerOnCooldown={localPlayerOnCooldown}
-        playerColorIds={playerColorIds}
+        localParticipantId={state.localParticipantId}
+        localInteractionDisabled={localInteractionDisabled}
+        participantColorIds={participantColorIds}
         onCellActivate={(position) => {
           void battle.increment(position);
         }}
