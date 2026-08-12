@@ -2,9 +2,12 @@ import {
   battleEventToServerMessages,
   type BattleCommand,
   type BattleEngine,
+  type BattleParticipantId,
   type BattleSnapshot,
   type ClientMessage,
+  type HostedParticipant,
   type PlayerId,
+  type Position,
   type ServerMessage,
 } from "@grid-game/shared";
 
@@ -23,18 +26,111 @@ export type HostedBattleAttachment = Readonly<{
   detach(): void;
 }>;
 
+export type HostedBattleOptions = Readonly<{
+  clock?: HostedBattleClock;
+  worldPosition?: Position | null;
+}>;
+
+export type HostedBattleTerminalResult = Readonly<{
+  winnerParticipantId: BattleParticipantId | null;
+  winnerPlayerId: PlayerId | null;
+  worldPosition: Position | null;
+}>;
+
+type HostedBattleTerminalListener = (result: HostedBattleTerminalResult) => void;
+
 /** Serialized, transport-free runtime for one authoritative battle. */
 export class HostedBattle {
   private readonly engine: BattleEngine;
   private readonly clock: HostedBattleClock;
+  private readonly participantToPlayer = new Map<BattleParticipantId, PlayerId>();
+  private readonly playerToParticipant = new Map<PlayerId, BattleParticipantId>();
+  private readonly orderedParticipantIds: readonly BattleParticipantId[];
+  private readonly hostedWorldPosition: Position | null;
   private readonly listeners = new Set<(message: ServerMessage) => void>();
+  private readonly terminalListeners = new Set<HostedBattleTerminalListener>();
   private operations: Promise<void> = Promise.resolve();
   private timer: unknown | null = null;
+  private terminalResult: HostedBattleTerminalResult | undefined;
   private disposed = false;
 
-  constructor(engine: BattleEngine, clock: HostedBattleClock = SYSTEM_CLOCK) {
+  constructor(
+    engine: BattleEngine,
+    roster: readonly Readonly<{
+      participantId: BattleParticipantId;
+      playerId: PlayerId;
+    }>[],
+    options: HostedBattleOptions = {},
+  ) {
     this.engine = engine;
-    this.clock = clock;
+    this.clock = options.clock ?? SYSTEM_CLOCK;
+    this.hostedWorldPosition = options.worldPosition == null
+      ? null
+      : { ...options.worldPosition };
+
+    const engineParticipantIds = new Set(
+      engine.getSnapshot().participants.map(({ participantId }) => participantId),
+    );
+    for (const entry of roster) {
+      if (this.participantToPlayer.has(entry.participantId)) {
+        throw new Error(`Duplicate hosted participant ${entry.participantId}`);
+      }
+      if (this.playerToParticipant.has(entry.playerId)) {
+        throw new Error(`Player ${entry.playerId} appears more than once in the battle`);
+      }
+      this.participantToPlayer.set(entry.participantId, entry.playerId);
+      this.playerToParticipant.set(entry.playerId, entry.participantId);
+    }
+    if (
+      this.participantToPlayer.size !== engineParticipantIds.size ||
+      [...this.participantToPlayer.keys()].some(
+        (participantId) => !engineParticipantIds.has(participantId),
+      )
+    ) {
+      throw new Error("Hosted roster must map every engine participant exactly once");
+    }
+    this.orderedParticipantIds = Object.freeze(
+      roster.map(({ participantId }) => participantId),
+    );
+  }
+
+  get worldPosition(): Position | null {
+    return this.hostedWorldPosition === null
+      ? null
+      : { ...this.hostedWorldPosition };
+  }
+
+  get snapshot(): BattleSnapshot {
+    return this.engine.getSnapshot();
+  }
+
+  getRoster(): readonly HostedParticipant[] {
+    const participants = new Map(
+      this.engine.getSnapshot().participants.map((participant) => [
+        participant.participantId,
+        participant,
+      ]),
+    );
+    return this.orderedParticipantIds.map((participantId) => {
+      const participant = participants.get(participantId);
+      const playerId = this.participantToPlayer.get(participantId);
+      if (participant === undefined || playerId === undefined) {
+        throw new Error(`Hosted participant ${participantId} is inconsistent`);
+      }
+      return { participantId, playerId, status: participant.status };
+    });
+  }
+
+  participantIdForPlayer(playerId: PlayerId): BattleParticipantId | undefined {
+    return this.playerToParticipant.get(playerId);
+  }
+
+  playerIdForParticipant(participantId: BattleParticipantId): PlayerId | undefined {
+    return this.participantToPlayer.get(participantId);
+  }
+
+  hasPlayer(playerId: PlayerId): boolean {
+    return this.playerToParticipant.has(playerId);
   }
 
   attach(listener: (message: ServerMessage) => void): HostedBattleAttachment {
@@ -52,9 +148,29 @@ export class HostedBattle {
     };
   }
 
+  /** Registers a callback that is invoked once for this battle's terminal outcome. */
+  onTerminal(listener: HostedBattleTerminalListener): () => void {
+    this.assertOpen();
+    if (this.terminalResult !== undefined) {
+      this.invokeTerminalListener(listener, this.terminalResult);
+      return () => undefined;
+    }
+    this.terminalListeners.add(listener);
+    let subscribed = true;
+    return () => {
+      if (!subscribed) return;
+      subscribed = false;
+      this.terminalListeners.delete(listener);
+    };
+  }
+
   start(): void {
     this.assertOpen();
-    if (this.timer !== null || this.engine.status.kind === "finished") return;
+    if (this.engine.status.kind === "finished") {
+      this.notifyTerminal();
+      return;
+    }
+    if (this.timer !== null) return;
     this.timer = this.clock.setInterval(
       () => { void this.enqueue(() => this.advance()); },
       1_000 / this.engine.getSnapshot().config.ticksPerSecond,
@@ -62,7 +178,7 @@ export class HostedBattle {
   }
 
   async receive(
-    playerId: PlayerId,
+    participantId: BattleParticipantId,
     message: ClientMessage,
     reply: (message: ServerMessage) => void,
   ): Promise<void> {
@@ -73,12 +189,23 @@ export class HostedBattle {
         return;
       }
       const command: BattleCommand = { kind: "incrementCell", position: message.position };
-      const result = this.engine.applyCommand({ playerId }, command);
+      const result = this.engine.applyCommand({ participantId }, command);
       if (!result.accepted) {
         reply({ type: "commandRejected", requestId: message.requestId, reason: result.reason });
         return;
       }
-      for (const event of result.events) this.broadcastEvent(event, this.engine.currentTick);
+      this.broadcastEvents(result.events, this.engine.currentTick);
+      this.notifyTerminal();
+    });
+  }
+
+  /** Withdraws a participant in the same operation queue as commands and ticks. */
+  async withdraw(participantId: BattleParticipantId): Promise<void> {
+    this.assertOpen();
+    await this.enqueue(() => {
+      const events = this.engine.withdrawParticipant(participantId);
+      this.broadcastEvents(events, this.engine.currentTick);
+      this.notifyTerminal();
     });
   }
 
@@ -87,13 +214,21 @@ export class HostedBattle {
     this.disposed = true;
     this.stop();
     this.listeners.clear();
+    this.terminalListeners.clear();
     await this.operations;
   }
 
   private advance(): void {
     const result = this.engine.advanceTick();
-    for (const event of result.events) this.broadcastEvent(event, result.tick);
-    if (this.engine.status.kind === "finished") this.stop();
+    this.broadcastEvents(result.events, result.tick);
+    this.notifyTerminal();
+  }
+
+  private broadcastEvents(
+    events: readonly Parameters<typeof battleEventToServerMessages>[0][],
+    tick: number,
+  ): void {
+    for (const event of events) this.broadcastEvent(event, tick);
   }
 
   private broadcastEvent(event: Parameters<typeof battleEventToServerMessages>[0], tick: number): void {
@@ -102,6 +237,36 @@ export class HostedBattle {
         try { listener(message); } catch { this.listeners.delete(listener); }
       }
     }
+  }
+
+  private notifyTerminal(): void {
+    if (this.terminalResult !== undefined || this.engine.status.kind !== "finished") return;
+    this.stop();
+    const winnerParticipantId = this.engine.status.winnerId;
+    const winnerPlayerId = winnerParticipantId === null
+      ? null
+      : this.participantToPlayer.get(winnerParticipantId);
+    if (winnerParticipantId !== null && winnerPlayerId === undefined) {
+      throw new Error(`Terminal winner ${winnerParticipantId} is not hosted`);
+    }
+    const result: HostedBattleTerminalResult = Object.freeze({
+      winnerParticipantId,
+      winnerPlayerId: winnerPlayerId ?? null,
+      worldPosition: this.hostedWorldPosition === null
+        ? null
+        : Object.freeze({ ...this.hostedWorldPosition }),
+    });
+    this.terminalResult = result;
+    const listeners = [...this.terminalListeners];
+    this.terminalListeners.clear();
+    for (const listener of listeners) this.invokeTerminalListener(listener, result);
+  }
+
+  private invokeTerminalListener(
+    listener: HostedBattleTerminalListener,
+    result: HostedBattleTerminalResult,
+  ): void {
+    try { listener(result); } catch { /* Terminal observers cannot corrupt simulation. */ }
   }
 
   private async enqueue(operation: () => void): Promise<void> {
