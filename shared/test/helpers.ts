@@ -1,17 +1,17 @@
 import type {
   BattleCell,
+  BattleParticipantId,
   BattleSetup,
   BattleSnapshot,
-  PlayerId,
   Position,
   SerializedGrid,
 } from "../src/domain/index.ts";
 
-/** Stable first-player identifier used throughout shared-engine tests. */
-export const ALPHA: PlayerId = "alpha";
+/** Stable first-participant identifier used throughout shared-engine tests. */
+export const ALPHA: BattleParticipantId = 0;
 
-/** Stable second-player identifier used throughout shared-engine tests. */
-export const BETA: PlayerId = "beta";
+/** Stable second-participant identifier used throughout shared-engine tests. */
+export const BETA: BattleParticipantId = 1;
 
 /** Creates a fresh empty battle cell. */
 export function empty(): BattleCell {
@@ -24,8 +24,11 @@ export function wall(): BattleCell {
 }
 
 /** Creates a fresh occupied battle cell. */
-export function occupied(playerId: PlayerId, count: number): BattleCell {
-  return { kind: "occupied", playerId, count };
+export function occupied(
+  participantId: BattleParticipantId,
+  count: number,
+): BattleCell {
+  return { kind: "occupied", participantId, count };
 }
 
 /** Converts a zero-based coordinate to its row-major array index. */
@@ -48,11 +51,17 @@ export function makeGrid(
   return { width, height, cells };
 }
 
-/** Builds a valid two-player battle setup around supplied grid data. */
+/** Builds a valid two-participant battle setup around supplied grid data. */
 export function makeSetup(
   grid: SerializedGrid<BattleCell>,
 ): BattleSetup {
-  return { players: [ALPHA, BETA], grid };
+  return {
+    participants: [
+      { participantId: ALPHA, status: "active" },
+      { participantId: BETA, status: "active" },
+    ],
+    grid,
+  };
 }
 
 /** Builds a restorable running snapshot with explicit queued splits. */
@@ -69,7 +78,10 @@ export function makeSnapshot(
     config: options.config ?? { ticksPerSecond: 20, splitDelayTicks: 10 },
     tick: options.tick ?? 0,
     status: options.status ?? { kind: "running" },
-    players: [ALPHA, BETA],
+    participants: [
+      { participantId: ALPHA, status: "active" },
+      { participantId: BETA, status: "active" },
+    ],
     grid,
     cooldowns: options.cooldowns ?? [],
     pendingSplits: options.pendingSplits ?? [],

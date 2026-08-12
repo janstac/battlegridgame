@@ -17,7 +17,6 @@ test("client protocol is battle-local and supports increments and probes", () =>
   const increment = {
     type: "incrementCell",
     requestId: "request-1",
-    playerId: ALPHA,
     position: { x: 2, y: 3 },
   };
   const probe = { type: "tickProbe", probeId: "probe-1" };
@@ -45,17 +44,17 @@ test("network protocol multiplexes battle-local messages without contaminating s
 
 test("engine events map to ordered server facts including victory cleanup", () => {
   assert.deepEqual(battleEventToServerMessages({
-    kind: "battleWon", winnerId: ALPHA,
+    kind: "battleFinished", winnerId: ALPHA,
   }, 12), [
     { type: "pendingSplitsCleared", tick: 12 },
     { type: "battleStatusChanged", tick: 12, status: { kind: "finished", winnerId: ALPHA } },
   ]);
   assert.deepEqual(battleEventToServerMessages({
-    kind: "cellIncremented", position: { x: 1, y: 2 }, playerId: ALPHA,
+    kind: "cellIncremented", position: { x: 1, y: 2 }, participantId: ALPHA,
     previousCount: 1, nextCount: 2, source: "command",
   }, 3), [{
     type: "cellIncremented", tick: 3, position: { x: 1, y: 2 },
-    cell: { kind: "occupied", playerId: ALPHA, count: 2 }, source: "command",
+    cell: { kind: "occupied", participantId: ALPHA, count: 2 }, source: "command",
   }]);
 });
 
@@ -65,7 +64,7 @@ test("server protocol validates individual authoritative facts", () => {
       type: "cellIncremented",
       tick: 2,
       position: { x: 0, y: 0 },
-      cell: { kind: "occupied", playerId: ALPHA, count: 2 },
+      cell: { kind: "occupied", participantId: ALPHA, count: 2 },
       source: "command",
     },
     {
@@ -87,7 +86,7 @@ test("server protocol validates individual authoritative facts", () => {
     type: "cellIncremented",
     tick: 0,
     position: { x: 0, y: 0 },
-    cell: { kind: "occupied", playerId: ALPHA, count: 0 },
+    cell: { kind: "occupied", participantId: ALPHA, count: 0 },
     source: "command",
   }));
 });
@@ -102,7 +101,7 @@ test("shared projector copies stated results without applying game rules", () =>
     type: "cellCaptured",
     tick: 7,
     position: { x: 1, y: 0 },
-    cell: { kind: "occupied", playerId: ALPHA, count: 42 },
+    cell: { kind: "occupied", participantId: ALPHA, count: 42 },
   });
   assert.equal(state.tick, 7);
   assert.deepEqual(state.cellAt({ x: 1, y: 0 }), occupied(ALPHA, 42));

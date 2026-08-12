@@ -6,7 +6,8 @@ import {
   BattleCellSchema,
   OccupiedCellSchema,
   PendingSplitSchema,
-  PlayerCooldownSchema,
+  BattleParticipantSchema,
+  ParticipantCooldownSchema,
   PositionSchema,
   RequestIdSchema,
   TickSchema,
@@ -63,7 +64,16 @@ export const CooldownChangedMessageSchema = Type.Object(
   {
     type: Type.Literal("cooldownChanged"),
     tick: TickSchema,
-    cooldown: PlayerCooldownSchema,
+    cooldown: ParticipantCooldownSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const ParticipantChangedMessageSchema = Type.Object(
+  {
+    type: Type.Literal("participantChanged"),
+    tick: TickSchema,
+    participant: BattleParticipantSchema,
   },
   { additionalProperties: false },
 );
@@ -111,6 +121,7 @@ export const BattleStateMessageSchema = Type.Union([
   SplitScheduledMessageSchema,
   CellSplitMessageSchema,
   CooldownChangedMessageSchema,
+  ParticipantChangedMessageSchema,
   BattleStatusChangedMessageSchema,
   PendingSplitsClearedMessageSchema,
 ]);

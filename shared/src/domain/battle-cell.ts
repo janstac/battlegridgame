@@ -1,7 +1,7 @@
 import Type from "typebox";
 
 import { SAFE_INTEGER_MAX } from "./coordinate.ts";
-import { PlayerIdSchema } from "./ids.ts";
+import { BattleParticipantIdSchema } from "./ids.ts";
 
 /** Runtime schema for a traversable, unoccupied battle cell. */
 export const EmptyCellSchema = Type.Object(
@@ -19,16 +19,16 @@ export const WallCellSchema = Type.Object(
 /** A blocking cell excluded from split thresholds and propagation. */
 export type WallCell = Type.Static<typeof WallCellSchema>;
 
-/** Runtime schema for a player-owned cell with a positive count. */
+/** Runtime schema for a participant-owned cell with a positive count. */
 export const OccupiedCellSchema = Type.Object(
   {
     kind: Type.Literal("occupied"),
-    playerId: PlayerIdSchema,
+    participantId: BattleParticipantIdSchema,
     count: Type.Integer({ minimum: 1, maximum: SAFE_INTEGER_MAX }),
   },
   { additionalProperties: false },
 );
-/** A cell owned by a player and carrying one or more counters. */
+/** A cell owned by a battle participant and carrying one or more counters. */
 export type OccupiedCell = Type.Static<typeof OccupiedCellSchema>;
 
 /** Runtime schema for every supported battle-cell state. */

@@ -24,12 +24,12 @@ const NO_COOLDOWN = new FixedCooldownPolicy(0);
 /** Applies an increment command and narrows the result to an accepted command. */
 function increment(
   engine: BattleEngine,
-  playerId: string,
+  participantId: number,
   x: number,
   y: number,
 ): Extract<CommandResult, { accepted: true }> {
   const result = engine.applyCommand(
-    { playerId },
+    { participantId },
     { kind: "incrementCell", position: { x, y } },
   );
   assert.equal(result.accepted, true);
@@ -72,14 +72,14 @@ test("increments owned cells and emits authoritative state changes", () => {
   assert.deepEqual(eventOfKind(result.events, "cellIncremented"), {
     kind: "cellIncremented",
     position: { x: 0, y: 0 },
-    playerId: ALPHA,
+    participantId: ALPHA,
     previousCount: 1,
     nextCount: 2,
     source: "command",
   });
   assert.deepEqual(eventOfKind(result.events, "cooldownStarted"), {
     kind: "cooldownStarted",
-    playerId: ALPHA,
+    participantId: ALPHA,
     nextActionTick: 4,
   });
   assert.deepEqual(cellAt(engine.getSnapshot().grid, { x: 0, y: 0 }), occupied(ALPHA, 2));
@@ -96,10 +96,10 @@ test("rejects invalid increment commands without changing the snapshot", () => {
   );
 
   const cases = [
-    [{ playerId: "unknown" }, { x: 0, y: 0 }, "unknownPlayer"],
-    [{ playerId: ALPHA }, { x: 3, y: 0 }, "outOfBounds"],
-    [{ playerId: ALPHA }, { x: 1, y: 0 }, "notOccupied"],
-    [{ playerId: ALPHA }, { x: 2, y: 1 }, "notOwner"],
+    [{ participantId: 99 }, { x: 0, y: 0 }, "unknownParticipant"],
+    [{ participantId: ALPHA }, { x: 3, y: 0 }, "outOfBounds"],
+    [{ participantId: ALPHA }, { x: 1, y: 0 }, "notOccupied"],
+    [{ participantId: ALPHA }, { x: 2, y: 1 }, "notOwner"],
   ] as const;
 
   for (const [context, position, reason] of cases) {
@@ -148,7 +148,7 @@ test("split threshold reflects corner, edge, interior, and adjacent-wall topolog
   }
 });
 
-test("cooldowns are isolated by player and by battle", () => {
+test("cooldowns are isolated by participant and by battle", () => {
   const setup = () => makeSetup(makeGrid(4, 2, [
     [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
     [{ x: 1, y: 0 }, occupied(ALPHA, 1)],
@@ -160,7 +160,7 @@ test("cooldowns are isolated by player and by battle", () => {
   increment(first, ALPHA, 0, 0);
   assert.deepEqual(
     first.applyCommand(
-      { playerId: ALPHA },
+      { participantId: ALPHA },
       { kind: "incrementCell", position: { x: 1, y: 0 } },
     ),
     { accepted: false, reason: "cooldownActive" },
@@ -173,7 +173,7 @@ test("cooldowns are isolated by player and by battle", () => {
   advance(first, 4);
   assert.deepEqual(
     first.applyCommand(
-      { playerId: ALPHA },
+      { participantId: ALPHA },
       { kind: "incrementCell", position: { x: 1, y: 0 } },
     ),
     { accepted: false, reason: "cooldownActive" },
@@ -203,7 +203,7 @@ test("a threshold cell splits after exactly ten ticks", () => {
   assert.deepEqual(eventOfKind(due.events, "cellSplit"), {
     kind: "cellSplit",
     position: { x: 1, y: 1 },
-    playerId: ALPHA,
+    participantId: ALPHA,
     count: 4,
   });
   assert.deepEqual(cellAt(engine.getSnapshot().grid, { x: 1, y: 1 }), empty());
@@ -238,8 +238,8 @@ test("a split increments friendly, empty, and enemy cells while skipping walls",
   assert.deepEqual(capture, {
     kind: "cellCaptured",
     position: { x: 2, y: 1 },
-    playerId: ALPHA,
-    previousPlayerId: BETA,
+    participantId: ALPHA,
+    previousParticipantId: BETA,
     previousCount: 2,
     nextCount: 3,
   });
@@ -266,8 +266,8 @@ test("same-tick pending splits resolve by sequence and use current ownership", (
   // The first split captures the second queued source, so that source then
   // resolves for ALPHA rather than for its owner at scheduling time.
   assert.deepEqual(splits, [
-    { kind: "cellSplit", position: { x: 0, y: 0 }, playerId: ALPHA, count: 1 },
-    { kind: "cellSplit", position: { x: 1, y: 0 }, playerId: ALPHA, count: 3 },
+    { kind: "cellSplit", position: { x: 0, y: 0 }, participantId: ALPHA, count: 1 },
+    { kind: "cellSplit", position: { x: 1, y: 0 }, participantId: ALPHA, count: 3 },
   ]);
   assert.deepEqual(engine.status, { kind: "finished", winnerId: ALPHA });
 });
@@ -290,7 +290,7 @@ test("a pending split captured on an earlier tick resolves for its new owner", (
   engine.advanceTick();
   assert.deepEqual(cellAt(engine.getSnapshot().grid, { x: 1, y: 0 }), occupied(ALPHA, 3));
   const result = engine.advanceTick();
-  assert.equal(eventOfKind(result.events, "cellSplit").playerId, ALPHA);
+  assert.equal(eventOfKind(result.events, "cellSplit").participantId, ALPHA);
 });
 
 test("a split schedules a newly critical neighbour as a delayed chain reaction", () => {
@@ -339,10 +339,10 @@ test("victory stops remaining same-tick splits and clears queued work", () => {
 
   const result = engine.advanceTick();
   assert.deepEqual(result.events.filter(({ kind }) => kind === "cellSplit"), [
-    { kind: "cellSplit", position: { x: 0, y: 0 }, playerId: ALPHA, count: 1 },
+    { kind: "cellSplit", position: { x: 0, y: 0 }, participantId: ALPHA, count: 1 },
   ]);
-  assert.deepEqual(eventOfKind(result.events, "battleWon"), {
-    kind: "battleWon",
+  assert.deepEqual(eventOfKind(result.events, "battleFinished"), {
+    kind: "battleFinished",
     winnerId: ALPHA,
   });
   assert.deepEqual(engine.getSnapshot().pendingSplits, []);
@@ -350,7 +350,7 @@ test("victory stops remaining same-tick splits and clears queued work", () => {
   const finished = engine.getSnapshot();
   assert.deepEqual(
     engine.applyCommand(
-      { playerId: ALPHA },
+      { participantId: ALPHA },
       { kind: "incrementCell", position: { x: 1, y: 0 } },
     ),
     { accepted: false, reason: "battleFinished" },
@@ -375,10 +375,13 @@ test("snapshots are independent and restore deterministic engine state", () => {
   assert.deepEqual(restored.getSnapshot(), restorable);
 
   // Mutating caller-owned snapshot data must not mutate either engine.
-  restorable.players.push("intruder");
+  restorable.participants.push({ participantId: 99, status: "active" });
   restorable.grid.cells[0] = wall();
   restorable.pendingSplits.length = 0;
-  assert.equal(engine.getSnapshot().players.includes("intruder"), false);
+  assert.equal(
+    engine.getSnapshot().participants.some(({ participantId }) => participantId === 99),
+    false,
+  );
   assert.notDeepEqual(cellAt(engine.getSnapshot().grid, { x: 0, y: 0 }), wall());
   assert.equal(engine.getSnapshot().pendingSplits.length, 1);
 
@@ -430,8 +433,8 @@ test("restore validates cooldown and split state supplied at its boundary", () =
     () => BattleEngine.restore({
       ...base,
       cooldowns: [
-        { playerId: ALPHA, nextActionTick: 1 },
-        { playerId: ALPHA, nextActionTick: 2 },
+        { participantId: ALPHA, nextActionTick: 1 },
+        { participantId: ALPHA, nextActionTick: 2 },
       ],
     }, NO_COOLDOWN),
     /Duplicate cooldown/,
@@ -439,7 +442,7 @@ test("restore validates cooldown and split state supplied at its boundary", () =
   assert.throws(
     () => BattleEngine.restore({
       ...base,
-      cooldowns: [{ playerId: "intruder", nextActionTick: 1 }],
+      cooldowns: [{ participantId: 99, nextActionTick: 1 }],
     }, NO_COOLDOWN),
     /not a participant/,
   );
@@ -487,7 +490,7 @@ test("engine rejects unknown command discriminants at its runtime boundary", () 
 
   assert.throws(
     () => engine.applyCommand(
-      { playerId: ALPHA },
+      { participantId: ALPHA },
       { kind: "lava" } as unknown as Parameters<BattleEngine["applyCommand"]>[1],
     ),
     /Unsupported battle command kind: lava/,
@@ -502,7 +505,7 @@ test("an overflowing direct increment preserves the complete engine state", () =
       [{ x: 2, y: 0 }, occupied(BETA, 1)],
     ]), {
       tick: 7,
-      cooldowns: [{ playerId: BETA, nextActionTick: 7 }],
+      cooldowns: [{ participantId: BETA, nextActionTick: 7 }],
     }),
     NO_COOLDOWN,
   );
@@ -510,14 +513,14 @@ test("an overflowing direct increment preserves the complete engine state", () =
 
   assert.throws(
     () => engine.applyCommand(
-      { playerId: ALPHA },
+      { participantId: ALPHA },
       { kind: "incrementCell", position: { x: 0, y: 0 } },
     ),
     /positive safe integer/,
   );
   assert.deepEqual(engine.getSnapshot(), before);
 
-  // A failure on one player does not poison later valid commands.
+  // A failure on one participant does not poison later valid commands.
   assert.equal(increment(engine, BETA, 2, 0).accepted, true);
 });
 
@@ -527,7 +530,7 @@ test("a split overflow rolls back its removed queue entry and emptied source", (
       [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
       [{ x: 1, y: 0 }, occupied(BETA, Number.MAX_SAFE_INTEGER)],
     ]), {
-      cooldowns: [{ playerId: ALPHA, nextActionTick: 0 }],
+      cooldowns: [{ participantId: ALPHA, nextActionTick: 0 }],
       pendingSplits: [
         { position: { x: 0, y: 0 }, dueTick: 1, sequence: 8 },
       ],
@@ -627,22 +630,26 @@ test("cooldown serialization follows participant order", () => {
   const engine = BattleEngine.restore(
     {
       ...makeSnapshot(makeGrid(3, 1, [
-        [{ x: 0, y: 0 }, occupied("ä", 1)],
-        [{ x: 2, y: 0 }, occupied("a", 1)],
+        [{ x: 0, y: 0 }, occupied(4, 1)],
+        [{ x: 2, y: 0 }, occupied(2, 1)],
       ])),
-      players: ["ä", "z", "a"],
+      participants: [
+        { participantId: 4, status: "active" },
+        { participantId: 9, status: "withdrawn" },
+        { participantId: 2, status: "active" },
+      ],
       cooldowns: [
-        { playerId: "a", nextActionTick: 3 },
-        { playerId: "ä", nextActionTick: 1 },
-        { playerId: "z", nextActionTick: 2 },
+        { participantId: 2, nextActionTick: 3 },
+        { participantId: 4, nextActionTick: 1 },
+        { participantId: 9, nextActionTick: 2 },
       ],
     },
     NO_COOLDOWN,
   );
 
   assert.deepEqual(
-    engine.getSnapshot().cooldowns.map(({ playerId }) => playerId),
-    ["ä", "z", "a"],
+    engine.getSnapshot().cooldowns.map(({ participantId }) => participantId),
+    [4, 9, 2],
   );
 });
 
@@ -658,4 +665,154 @@ test("engine snapshots contain simulation state without a battle id", () => {
 
   assert.equal("battleId" in engine.getSnapshot(), false);
   assert.equal("battleId" in engine, false);
+});
+
+test("withdrawal is idempotent, preserves cells, and rejects further commands", () => {
+  const engine = BattleEngine.create(
+    {
+      participants: [
+        { participantId: ALPHA, status: "active" },
+        { participantId: BETA, status: "active" },
+        { participantId: 2, status: "active" },
+      ],
+      grid: makeGrid(4, 2, [
+        [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
+        [{ x: 1, y: 0 }, occupied(BETA, 1)],
+        [{ x: 3, y: 1 }, occupied(2, 1)],
+      ]),
+    },
+    CONFIG,
+    NO_COOLDOWN,
+  );
+
+  assert.deepEqual(engine.withdrawParticipant(BETA), [{
+    kind: "participantStatusChanged",
+    participantId: BETA,
+    status: "withdrawn",
+  }]);
+  assert.deepEqual(engine.withdrawParticipant(BETA), []);
+  assert.deepEqual(
+    cellAt(engine.getSnapshot().grid, { x: 1, y: 0 }),
+    occupied(BETA, 1),
+  );
+  assert.deepEqual(
+    engine.applyCommand(
+      { participantId: BETA },
+      { kind: "incrementCell", position: { x: 1, y: 0 } },
+    ),
+    { accepted: false, reason: "participantInactive" },
+  );
+});
+
+test("withdrawing to one active contender finishes while leaving withdrawn cells", () => {
+  const engine = BattleEngine.create(
+    makeSetup(makeGrid(3, 1, [
+      [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
+      [{ x: 2, y: 0 }, occupied(BETA, 1)],
+    ])),
+    CONFIG,
+    NO_COOLDOWN,
+  );
+
+  assert.deepEqual(engine.withdrawParticipant(BETA), [
+    {
+      kind: "participantStatusChanged",
+      participantId: BETA,
+      status: "withdrawn",
+    },
+    { kind: "battleFinished", winnerId: ALPHA },
+  ]);
+  assert.deepEqual(engine.status, { kind: "finished", winnerId: ALPHA });
+  assert.deepEqual(
+    cellAt(engine.getSnapshot().grid, { x: 2, y: 0 }),
+    occupied(BETA, 1),
+  );
+});
+
+test("queued cascades owned by a withdrawn participant continue", () => {
+  const engine = BattleEngine.create(
+    {
+      participants: [
+        { participantId: ALPHA, status: "active" },
+        { participantId: BETA, status: "active" },
+        { participantId: 2, status: "active" },
+      ],
+      grid: makeGrid(4, 3, [
+        [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
+        [{ x: 1, y: 1 }, occupied(BETA, 4)],
+        [{ x: 3, y: 2 }, occupied(2, 1)],
+      ]),
+    },
+    CONFIG,
+    NO_COOLDOWN,
+  );
+  assert.equal(engine.getSnapshot().pendingSplits.length, 1);
+
+  engine.withdrawParticipant(BETA);
+  const events = advance(engine, CONFIG.splitDelayTicks);
+
+  assert.equal(
+    events.some(
+      (event) => event.kind === "cellSplit" && event.participantId === BETA,
+    ),
+    true,
+  );
+  assert.deepEqual(
+    cellAt(engine.getSnapshot().grid, { x: 1, y: 0 }),
+    occupied(BETA, 1),
+  );
+  assert.equal(engine.status.kind, "running");
+});
+
+test("ownership changes eliminate participants immediately before adjudication", () => {
+  const engine = BattleEngine.create(
+    {
+      participants: [
+        { participantId: ALPHA, status: "active" },
+        { participantId: BETA, status: "active" },
+        { participantId: 2, status: "active" },
+      ],
+      grid: makeGrid(3, 1, [
+        [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
+        [{ x: 1, y: 0 }, occupied(BETA, 1)],
+        [{ x: 2, y: 0 }, occupied(2, 1)],
+      ]),
+    },
+    CONFIG,
+    NO_COOLDOWN,
+  );
+
+  const events = advance(engine, CONFIG.splitDelayTicks);
+  assert.deepEqual(
+    events.filter(({ kind }) => kind === "participantStatusChanged"),
+    [
+      {
+        kind: "participantStatusChanged",
+        participantId: BETA,
+        status: "eliminated",
+      },
+      {
+        kind: "participantStatusChanged",
+        participantId: ALPHA,
+        status: "eliminated",
+      },
+    ],
+  );
+  assert.deepEqual(engine.status, { kind: "finished", winnerId: 2 });
+});
+
+test("finished snapshots can represent a no-winner outcome", () => {
+  const snapshot = makeSnapshot(makeGrid(3, 1, [
+    [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
+    [{ x: 2, y: 0 }, occupied(BETA, 1)],
+  ]), {
+    status: { kind: "finished", winnerId: null },
+  });
+  snapshot.participants = snapshot.participants.map((participant) => ({
+    ...participant,
+    status: "withdrawn",
+  }));
+
+  const engine = BattleEngine.restore(snapshot, NO_COOLDOWN);
+  assert.deepEqual(engine.status, { kind: "finished", winnerId: null });
 });

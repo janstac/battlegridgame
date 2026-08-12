@@ -9,11 +9,11 @@ export function battleEventToServerMessages(
   switch (event.kind) {
     case "cellIncremented":
       return [{ type: "cellIncremented", tick, position: { ...event.position }, cell: {
-        kind: "occupied", playerId: event.playerId, count: event.nextCount,
+        kind: "occupied", participantId: event.participantId, count: event.nextCount,
       }, source: event.source }];
     case "cellCaptured":
       return [{ type: "cellCaptured", tick, position: { ...event.position }, cell: {
-        kind: "occupied", playerId: event.playerId, count: event.nextCount,
+        kind: "occupied", participantId: event.participantId, count: event.nextCount,
       } }];
     case "splitScheduled":
       return [{ type: "splitScheduled", tick, split: {
@@ -23,9 +23,13 @@ export function battleEventToServerMessages(
       return [{ type: "cellSplit", tick, position: { ...event.position }, cell: { kind: "empty" } }];
     case "cooldownStarted":
       return [{ type: "cooldownChanged", tick, cooldown: {
-        playerId: event.playerId, nextActionTick: event.nextActionTick,
+        participantId: event.participantId, nextActionTick: event.nextActionTick,
       } }];
-    case "battleWon":
+    case "participantStatusChanged":
+      return [{ type: "participantChanged", tick, participant: {
+        participantId: event.participantId, status: event.status,
+      } }];
+    case "battleFinished":
       return [
         { type: "pendingSplitsCleared", tick },
         { type: "battleStatusChanged", tick, status: {

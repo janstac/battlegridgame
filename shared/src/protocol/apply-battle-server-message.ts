@@ -26,6 +26,9 @@ export function applyBattleServerMessage(
     case "cooldownChanged":
       state.replaceCooldown(message.cooldown);
       break;
+    case "participantChanged":
+      state.replaceParticipant(message.participant);
+      break;
     case "battleStatusChanged":
       state.replaceStatus(message.status);
       break;

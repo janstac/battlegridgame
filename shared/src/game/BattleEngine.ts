@@ -1,12 +1,12 @@
 import {
   BattleState,
+  type BattleParticipantId,
   type BattleCell,
   type BattleConfig,
   type BattleSetup,
   type BattleSnapshot,
   type BattleStatus,
   type PendingSplit,
-  type PlayerId,
   type Position,
 } from "../domain/index.ts";
 import type { BattleCommand, CommandContext } from "./commands.ts";
@@ -84,6 +84,28 @@ export class BattleEngine {
     });
   }
 
+  /** Withdraws one participant and immediately reevaluates the battle outcome. */
+  withdrawParticipant(participantId: BattleParticipantId): BattleEvent[] {
+    return this.runAtomically(() => {
+      const participant = this.state.participant(participantId);
+      if (participant === undefined) {
+        throw new Error(`Unknown participant ${participantId}`);
+      }
+      if (participant.status !== "active" || this.state.status.kind === "finished") {
+        return [];
+      }
+
+      this.state.replaceParticipant({ participantId, status: "withdrawn" });
+      const events: BattleEvent[] = [{
+        kind: "participantStatusChanged",
+        participantId,
+        status: "withdrawn",
+      }];
+      events.push(...this.adjudicate());
+      return events;
+    });
+  }
+
   private applyIncrementCommand(
     context: CommandContext,
     command: BattleCommand,
@@ -91,8 +113,12 @@ export class BattleEngine {
     if (this.state.status.kind === "finished") {
       return { accepted: false, reason: "battleFinished" };
     }
-    if (!this.state.players.includes(context.playerId)) {
-      return { accepted: false, reason: "unknownPlayer" };
+    const participant = this.state.participant(context.participantId);
+    if (participant === undefined) {
+      return { accepted: false, reason: "unknownParticipant" };
+    }
+    if (participant.status !== "active") {
+      return { accepted: false, reason: "participantInactive" };
     }
     if (!this.state.contains(command.position)) {
       return { accepted: false, reason: "outOfBounds" };
@@ -101,18 +127,18 @@ export class BattleEngine {
     if (cell.kind !== "occupied") {
       return { accepted: false, reason: "notOccupied" };
     }
-    if (cell.playerId !== context.playerId) {
+    if (cell.participantId !== context.participantId) {
       return { accepted: false, reason: "notOwner" };
     }
     if (
       this.state.tick <
-      (this.state.cooldownFor(context.playerId)?.nextActionTick ?? 0)
+      (this.state.cooldownFor(context.participantId)?.nextActionTick ?? 0)
     ) {
       return { accepted: false, reason: "cooldownActive" };
     }
 
     const durationTicks = this.cooldownPolicy.durationTicks({
-      playerId: context.playerId,
+      participantId: context.participantId,
       currentTick: this.state.tick,
       position: { ...command.position },
       snapshot: this.getSnapshot(),
@@ -124,14 +150,14 @@ export class BattleEngine {
       "Cooldown next action tick",
     );
 
-    const events = this.applyIncrement(context.playerId, command.position);
+    const events = this.applyIncrement(context.participantId, command.position);
     this.state.replaceCooldown({
-      playerId: context.playerId,
+      participantId: context.participantId,
       nextActionTick,
     });
     events.push({
       kind: "cooldownStarted",
-      playerId: context.playerId,
+      participantId: context.participantId,
       nextActionTick,
     });
     return { accepted: true, events };
@@ -156,11 +182,8 @@ export class BattleEngine {
       for (const pending of dueSplits) {
         this.dueSplitPositions.delete(this.positionKey(pending.position));
         events.push(...this.resolveSplit(pending));
-        const won = this.finishIfWon();
-        if (won !== undefined) {
-          events.push(won);
-          this.state.clearPendingSplits();
-          this.dueSplitPositions.clear();
+        events.push(...this.adjudicate());
+        if (this.state.status.kind === "finished") {
           break;
         }
       }
@@ -183,18 +206,25 @@ export class BattleEngine {
     }
   }
 
-  private applyIncrement(playerId: PlayerId, position: Position): BattleEvent[] {
+  private applyIncrement(
+    participantId: BattleParticipantId,
+    position: Position,
+  ): BattleEvent[] {
     const cell = this.state.cellAt(position);
-    if (cell.kind !== "occupied" || cell.playerId !== playerId) {
+    if (cell.kind !== "occupied" || cell.participantId !== participantId) {
       throw new Error("Internal increment precondition failed");
     }
     const nextCount = cell.count + 1;
     this.assertCount(nextCount);
-    this.state.replaceCell(position, { kind: "occupied", playerId, count: nextCount });
+    this.state.replaceCell(position, {
+      kind: "occupied",
+      participantId,
+      count: nextCount,
+    });
     const events: BattleEvent[] = [{
       kind: "cellIncremented",
       position: { ...position },
-      playerId,
+      participantId,
       previousCount: cell.count,
       nextCount,
       source: "command",
@@ -211,32 +241,40 @@ export class BattleEngine {
     const events: BattleEvent[] = [{
       kind: "cellSplit",
       position: { ...pending.position },
-      playerId: source.playerId,
+      participantId: source.participantId,
       count: source.count,
     }];
     this.state.replaceCell(pending.position, { kind: "empty" });
 
     for (const position of this.state.orthogonalNeighbours(pending.position)) {
       if (this.state.cellAt(position).kind !== "wall") {
-        events.push(...this.incrementFromSplit(position, source.playerId));
+        events.push(...this.incrementFromSplit(position, source.participantId));
       }
     }
     return events;
   }
 
-  private incrementFromSplit(position: Position, playerId: PlayerId): BattleEvent[] {
+  private incrementFromSplit(
+    position: Position,
+    participantId: BattleParticipantId,
+  ): BattleEvent[] {
     const previous = this.state.cellAt(position);
     if (previous.kind === "wall") return [];
     const previousCount = previous.kind === "occupied" ? previous.count : 0;
     const nextCount = previousCount + 1;
     this.assertCount(nextCount);
-    this.state.replaceCell(position, { kind: "occupied", playerId, count: nextCount });
+    this.state.replaceCell(position, {
+      kind: "occupied",
+      participantId,
+      count: nextCount,
+    });
 
-    const events: BattleEvent[] = previous.kind === "occupied" && previous.playerId === playerId
+    const events: BattleEvent[] = previous.kind === "occupied" &&
+      previous.participantId === participantId
       ? [{
           kind: "cellIncremented",
           position: { ...position },
-          playerId,
+          participantId,
           previousCount,
           nextCount,
           source: "split",
@@ -244,8 +282,10 @@ export class BattleEngine {
       : [{
           kind: "cellCaptured",
           position: { ...position },
-          playerId,
-          previousPlayerId: previous.kind === "occupied" ? previous.playerId : null,
+          participantId,
+          previousParticipantId: previous.kind === "occupied"
+            ? previous.participantId
+            : null,
           previousCount,
           nextCount,
         }];
@@ -305,35 +345,68 @@ export class BattleEngine {
     return next;
   }
 
-  private finishIfWon(): BattleEvent | undefined {
-    const owners = this.occupiedPlayerIds();
-    if (owners.size !== 1) return undefined;
-    const winnerId = owners.values().next().value as PlayerId;
+  private adjudicate(): BattleEvent[] {
+    const events: BattleEvent[] = [];
+    const owners = this.occupiedParticipantIds();
+    for (const participant of this.state.participants) {
+      if (participant.status === "active" && !owners.has(participant.participantId)) {
+        this.state.replaceParticipant({
+          participantId: participant.participantId,
+          status: "eliminated",
+        });
+        events.push({
+          kind: "participantStatusChanged",
+          participantId: participant.participantId,
+          status: "eliminated",
+        });
+      }
+    }
+
+    const contenders = this.state.participants.filter(
+      ({ status }) => status === "active",
+    );
+    if (contenders.length > 1) return events;
+
+    const winnerId = contenders[0]?.participantId ?? null;
     this.state.replaceStatus({ kind: "finished", winnerId });
-    return { kind: "battleWon", winnerId };
+    this.state.clearPendingSplits();
+    this.dueSplitPositions.clear();
+    events.push({ kind: "battleFinished", winnerId });
+    return events;
   }
 
-  private occupiedPlayerIds(): Set<PlayerId> {
-    const owners = new Set<PlayerId>();
+  private occupiedParticipantIds(): Set<BattleParticipantId> {
+    const owners = new Set<BattleParticipantId>();
     for (const [, cell] of this.state.entries()) {
-      if (cell.kind === "occupied") owners.add(cell.playerId);
+      if (cell.kind === "occupied") owners.add(cell.participantId);
     }
     return owners;
   }
 
   private assertStateIsValid(isNewBattle: boolean): void {
     BattleEngine.assertNonNegativeInteger(this.state.tick, "Battle tick");
-    const players = this.state.players;
-    if (players.length < 2 || new Set(players).size !== players.length) {
-      throw new Error("A battle requires at least two unique players");
+    const participants = this.state.participants;
+    const participantIds = participants.map(({ participantId }) => participantId);
+    if (
+      participants.length < 2 ||
+      new Set(participantIds).size !== participants.length
+    ) {
+      throw new Error("A battle requires at least two unique participants");
     }
-    if (players.some((playerId) => playerId.length === 0)) {
-      throw new Error("Player ids must not be empty");
+    for (const participantId of participantIds) {
+      BattleEngine.assertNonNegativeInteger(participantId, "Participant id");
+    }
+    for (const { status } of participants) {
+      if (status !== "active" && status !== "withdrawn" && status !== "eliminated") {
+        throw new Error(`Unsupported participation status: ${String(status)}`);
+      }
     }
     for (const [position, cell] of this.state.entries()) {
       if (cell.kind === "occupied") {
-        if (!players.includes(cell.playerId)) {
-          throw new Error(`Cell owner ${cell.playerId} is not a participant`);
+        if (!participantIds.includes(cell.participantId)) {
+          throw new Error(
+            `Cell owner ${cell.participantId} is not a participant`,
+          );
         }
         this.assertCount(cell.count);
       }
@@ -356,25 +429,47 @@ export class BattleEngine {
       }
       seenSequences.add(split.sequence);
     }
-    for (const playerId of players) {
-      const cooldown = this.state.cooldownFor(playerId);
+    for (const participantId of participantIds) {
+      const cooldown = this.state.cooldownFor(participantId);
       if (cooldown !== undefined) {
         BattleEngine.assertNonNegativeInteger(cooldown.nextActionTick, "Next action tick");
       }
     }
-    const owners = this.occupiedPlayerIds();
-    if (isNewBattle && owners.size < 2) {
-      throw new Error("A new battle requires occupied cells for two players");
+    const owners = this.occupiedParticipantIds();
+    const activeParticipants = participants.filter(({ status }) => status === "active");
+    const activeContenders = activeParticipants.filter(({ participantId }) =>
+      owners.has(participantId)
+    );
+    const eliminatedOwners = participants.filter(
+      ({ participantId, status }) => status === "eliminated" && owners.has(participantId),
+    );
+    if (eliminatedOwners.length > 0) {
+      throw new Error("Eliminated participants cannot own cells");
     }
-    if (this.state.status.kind === "running" && owners.size < 2) {
-      throw new Error("A running battle requires at least two active owners");
+    if (
+      isNewBattle &&
+      (activeParticipants.length !== participants.length ||
+        activeContenders.length !== participants.length)
+    ) {
+      throw new Error("A new battle requires occupied cells for every active participant");
+    }
+    if (
+      this.state.status.kind === "running" &&
+      (activeParticipants.length < 2 || activeContenders.length !== activeParticipants.length)
+    ) {
+      throw new Error("A running battle requires at least two active contenders");
     }
     const status = this.state.status;
-    if (
-      status.kind === "finished" &&
-      (owners.size !== 1 || !owners.has(status.winnerId))
-    ) {
-      throw new Error("Finished battle winner does not match occupied cells");
+    if (status.kind === "finished") {
+      if (
+        status.winnerId === null
+          ? activeParticipants.length !== 0
+          : activeParticipants.length !== 1 ||
+            activeContenders.length !== 1 ||
+            activeContenders[0]?.participantId !== status.winnerId
+      ) {
+        throw new Error("Finished battle winner does not match active contenders");
+      }
     }
     if (status.kind === "finished" && this.state.pendingSplits().length > 0) {
       throw new Error("Finished battle cannot contain pending splits");

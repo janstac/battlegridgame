@@ -1,5 +1,12 @@
 import Schema from "typebox/schema";
 
+import { WorldCellSchema, type WorldCell } from "../domain/world-cell.ts";
+import {
+  WorldDeltaSchema,
+  WorldSnapshotSchema,
+  type WorldDelta,
+  type WorldSnapshot,
+} from "../domain/world-state.ts";
 import {
   ClientMessageSchema,
   type ClientMessage,
@@ -20,6 +27,9 @@ export const ClientMessageValidator = Schema.Compile(ClientMessageSchema);
 export const ServerMessageValidator = Schema.Compile(ServerMessageSchema);
 export const NetworkClientMessageValidator = Schema.Compile(NetworkClientMessageSchema);
 export const NetworkServerMessageValidator = Schema.Compile(NetworkServerMessageSchema);
+export const WorldCellValidator = Schema.Compile(WorldCellSchema);
+export const WorldSnapshotValidator = Schema.Compile(WorldSnapshotSchema);
+export const WorldDeltaValidator = Schema.Compile(WorldDeltaSchema);
 const StructuralServerMessageValidator = Schema.Compile(ServerMessageSchema);
 
 /** Narrows an unknown value after validating the complete client schema. */
@@ -48,4 +58,16 @@ export function parseNetworkClientMessage(value: unknown): NetworkClientMessage 
 
 export function parseNetworkServerMessage(value: unknown): NetworkServerMessage {
   return NetworkServerMessageValidator.Parse(value);
+}
+
+export function parseWorldCell(value: unknown): WorldCell {
+  return WorldCellValidator.Parse(value);
+}
+
+export function parseWorldSnapshot(value: unknown): WorldSnapshot {
+  return WorldSnapshotValidator.Parse(value);
+}
+
+export function parseWorldDelta(value: unknown): WorldDelta {
+  return WorldDeltaValidator.Parse(value);
 }

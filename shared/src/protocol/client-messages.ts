@@ -1,17 +1,15 @@
 import Type from "typebox";
 
 import {
-  PlayerIdSchema,
   PositionSchema,
   RequestIdSchema,
 } from "../domain/index.ts";
 
-/** A client's intent to increment one cell as its locally selected player. */
+/** A client's intent to increment one of its cells. */
 export const IncrementCellMessageSchema = Type.Object(
   {
     type: Type.Literal("incrementCell"),
     requestId: RequestIdSchema,
-    playerId: PlayerIdSchema,
     position: PositionSchema,
   },
   { additionalProperties: false },

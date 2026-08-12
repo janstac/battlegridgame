@@ -1,12 +1,12 @@
 import type {
-  PlayerId,
+  BattleParticipantId,
   Position,
 } from "../domain/index.ts";
 import type { BattleSnapshot } from "../domain/index.ts";
 
 /** Inputs available when calculating an accepted command's cooldown. */
 export type CooldownContext = {
-  playerId: PlayerId;
+  participantId: BattleParticipantId;
   currentTick: number;
   position: Position;
   snapshot: BattleSnapshot;

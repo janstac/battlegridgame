@@ -7,7 +7,10 @@ import {
   TickSchema,
 } from "./coordinate.ts";
 import { SerializedGridSchema } from "./grid.ts";
-import { PlayerIdSchema, type PlayerId } from "./ids.ts";
+import {
+  BattleParticipantIdSchema,
+  type BattleParticipantId,
+} from "./ids.ts";
 import type { BattleCell } from "./battle-cell.ts";
 import type { Position } from "./coordinate.ts";
 import type { SerializedGrid } from "./grid.ts";
@@ -23,7 +26,7 @@ export const RunningBattleStatusSchema = Type.Object(
 export const FinishedBattleStatusSchema = Type.Object(
   {
     kind: Type.Literal("finished"),
-    winnerId: PlayerIdSchema,
+    winnerId: Type.Union([BattleParticipantIdSchema, Type.Null()]),
   },
   { additionalProperties: false },
 );
@@ -33,19 +36,37 @@ export const BattleStatusSchema = Type.Union([
   RunningBattleStatusSchema,
   FinishedBattleStatusSchema,
 ]);
-/** Indicates whether a battle is active or has a winner. */
+/** Indicates whether a battle is active or has reached a terminal outcome. */
 export type BattleStatus = Type.Static<typeof BattleStatusSchema>;
 
-/** Runtime schema for one player's next permitted action tick. */
-export const PlayerCooldownSchema = Type.Object(
+/** Runtime schema for command and victory participation lifecycle. */
+export const ParticipationStatusSchema = Type.Union([
+  Type.Literal("active"),
+  Type.Literal("withdrawn"),
+  Type.Literal("eliminated"),
+]);
+export type ParticipationStatus = Type.Static<typeof ParticipationStatusSchema>;
+
+/** Runtime schema for one stable battle-local participant. */
+export const BattleParticipantSchema = Type.Object(
   {
-    playerId: PlayerIdSchema,
+    participantId: BattleParticipantIdSchema,
+    status: ParticipationStatusSchema,
+  },
+  { additionalProperties: false },
+);
+export type BattleParticipant = Type.Static<typeof BattleParticipantSchema>;
+
+/** Runtime schema for one participant's next permitted action tick. */
+export const ParticipantCooldownSchema = Type.Object(
+  {
+    participantId: BattleParticipantIdSchema,
     nextActionTick: TickSchema,
   },
   { additionalProperties: false },
 );
-/** Serializable per-player cooldown state for one battle. */
-export type PlayerCooldown = Type.Static<typeof PlayerCooldownSchema>;
+/** Serializable per-participant cooldown state for one battle. */
+export type ParticipantCooldown = Type.Static<typeof ParticipantCooldownSchema>;
 
 /** Runtime schema for a delayed split in deterministic queue order. */
 export const PendingSplitSchema = Type.Object(
@@ -62,12 +83,12 @@ export type PendingSplit = Type.Static<typeof PendingSplitSchema>;
 /** Runtime schema for immutable inputs used to create a battle. */
 export const BattleSetupSchema = Type.Object(
   {
-    players: Type.Array(PlayerIdSchema, { minItems: 2, uniqueItems: true }),
+    participants: Type.Array(BattleParticipantSchema, { minItems: 2 }),
     grid: SerializedGridSchema(BattleCellSchema),
   },
   { additionalProperties: false },
 );
-/** Initial participants and grid supplied to a new engine. */
+/** Initial participant roster and grid supplied to a new engine. */
 export type BattleSetup = Type.Static<typeof BattleSetupSchema>;
 
 /** Runtime schema for a complete authoritative battle snapshot. */
@@ -76,9 +97,9 @@ export const BattleSnapshotSchema = Type.Object(
     config: BattleConfigSchema,
     tick: TickSchema,
     status: BattleStatusSchema,
-    players: Type.Array(PlayerIdSchema, { minItems: 2, uniqueItems: true }),
+    participants: Type.Array(BattleParticipantSchema, { minItems: 2 }),
     grid: SerializedGridSchema(BattleCellSchema),
-    cooldowns: Type.Array(PlayerCooldownSchema),
+    cooldowns: Type.Array(ParticipantCooldownSchema),
     pendingSplits: Type.Array(PendingSplitSchema),
   },
   { additionalProperties: false },
@@ -106,6 +127,10 @@ function copyStatus(status: BattleStatus): BattleStatus {
     : { kind: "finished", winnerId: status.winnerId };
 }
 
+function copyParticipant(participant: BattleParticipant): BattleParticipant {
+  return { ...participant };
+}
+
 function copySplit(split: PendingSplit): PendingSplit {
   return { ...split, position: { ...split.position } };
 }
@@ -123,31 +148,39 @@ function positionKey(position: Position): string {
  */
 export class BattleState {
   private readonly battleConfig: BattleConfig;
-  private readonly playerIds: PlayerId[];
+  private participantsById: Map<BattleParticipantId, BattleParticipant>;
   private grid: FixedGrid<BattleCell>;
   private currentTick: number;
   private battleStatus: BattleStatus;
-  private cooldownsByPlayer: Map<PlayerId, PlayerCooldown>;
+  private cooldownsByParticipant: Map<BattleParticipantId, ParticipantCooldown>;
   private splitsByPosition: Map<string, PendingSplit>;
 
   private constructor(snapshot: BattleSnapshot) {
     this.battleConfig = { ...snapshot.config };
-    this.playerIds = [...snapshot.players];
+    this.participantsById = new Map();
+    for (const participant of snapshot.participants) {
+      if (this.participantsById.has(participant.participantId)) {
+        throw new Error(`Duplicate participant ${participant.participantId}`);
+      }
+      this.participantsById.set(participant.participantId, copyParticipant(participant));
+    }
     this.grid = FixedGrid.fromData({
       ...snapshot.grid,
       cells: snapshot.grid.cells.map(copyCell),
     });
     this.currentTick = snapshot.tick;
     this.battleStatus = copyStatus(snapshot.status);
-    this.cooldownsByPlayer = new Map();
+    this.cooldownsByParticipant = new Map();
     for (const cooldown of snapshot.cooldowns) {
-      if (!this.playerIds.includes(cooldown.playerId)) {
-        throw new Error(`Cooldown player ${cooldown.playerId} is not a participant`);
+      if (!this.participantsById.has(cooldown.participantId)) {
+        throw new Error(
+          `Cooldown participant ${cooldown.participantId} is not a participant`,
+        );
       }
-      if (this.cooldownsByPlayer.has(cooldown.playerId)) {
-        throw new Error(`Duplicate cooldown for player ${cooldown.playerId}`);
+      if (this.cooldownsByParticipant.has(cooldown.participantId)) {
+        throw new Error(`Duplicate cooldown for participant ${cooldown.participantId}`);
       }
-      this.cooldownsByPlayer.set(cooldown.playerId, { ...cooldown });
+      this.cooldownsByParticipant.set(cooldown.participantId, { ...cooldown });
     }
     this.splitsByPosition = new Map();
     for (const split of snapshot.pendingSplits) {
@@ -165,7 +198,7 @@ export class BattleState {
       config: { ...config },
       tick: 0,
       status: { kind: "running" },
-      players: [...setup.players],
+      participants: setup.participants.map(copyParticipant),
       grid: { ...setup.grid, cells: setup.grid.cells.map(copyCell) },
       cooldowns: [],
       pendingSplits: [],
@@ -189,8 +222,13 @@ export class BattleState {
     return copyStatus(this.battleStatus);
   }
 
-  get players(): readonly PlayerId[] {
-    return [...this.playerIds];
+  get participants(): readonly BattleParticipant[] {
+    return [...this.participantsById.values()].map(copyParticipant);
+  }
+
+  participant(participantId: BattleParticipantId): BattleParticipant | undefined {
+    const participant = this.participantsById.get(participantId);
+    return participant === undefined ? undefined : copyParticipant(participant);
   }
 
   cellAt(position: Position): BattleCell {
@@ -212,8 +250,8 @@ export class BattleState {
     ] as const);
   }
 
-  cooldownFor(playerId: PlayerId): PlayerCooldown | undefined {
-    const cooldown = this.cooldownsByPlayer.get(playerId);
+  cooldownFor(participantId: BattleParticipantId): ParticipantCooldown | undefined {
+    const cooldown = this.cooldownsByParticipant.get(participantId);
     return cooldown === undefined ? undefined : { ...cooldown };
   }
 
@@ -240,8 +278,15 @@ export class BattleState {
     this.grid.set(position, copyCell(cell));
   }
 
-  replaceCooldown(cooldown: PlayerCooldown): void {
-    this.cooldownsByPlayer.set(cooldown.playerId, { ...cooldown });
+  replaceParticipant(participant: BattleParticipant): void {
+    if (!this.participantsById.has(participant.participantId)) {
+      throw new Error(`Unknown participant ${participant.participantId}`);
+    }
+    this.participantsById.set(participant.participantId, copyParticipant(participant));
+  }
+
+  replaceCooldown(cooldown: ParticipantCooldown): void {
+    this.cooldownsByParticipant.set(cooldown.participantId, { ...cooldown });
   }
 
   addPendingSplit(split: PendingSplit): void {
@@ -261,9 +306,9 @@ export class BattleState {
   }
 
   toSnapshot(): BattleSnapshot {
-    const cooldowns: PlayerCooldown[] = [];
-    for (const playerId of this.playerIds) {
-      const cooldown = this.cooldownsByPlayer.get(playerId);
+    const cooldowns: ParticipantCooldown[] = [];
+    for (const participantId of this.participantsById.keys()) {
+      const cooldown = this.cooldownsByParticipant.get(participantId);
       if (cooldown !== undefined) {
         cooldowns.push({ ...cooldown });
       }
@@ -272,7 +317,7 @@ export class BattleState {
       config: { ...this.battleConfig },
       tick: this.currentTick,
       status: copyStatus(this.battleStatus),
-      players: [...this.playerIds],
+      participants: this.participants.map(copyParticipant),
       grid: this.grid.toData(copyCell),
       cooldowns,
       pendingSplits: this.pendingSplits(),

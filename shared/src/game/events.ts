@@ -1,7 +1,8 @@
 import Type from "typebox";
 
 import {
-  PlayerIdSchema,
+  BattleParticipantIdSchema,
+  ParticipationStatusSchema,
   PositionSchema,
   SAFE_INTEGER_MAX,
   TickSchema,
@@ -12,7 +13,7 @@ export const CellIncrementedEventSchema = Type.Object(
   {
     kind: Type.Literal("cellIncremented"),
     position: PositionSchema,
-    playerId: PlayerIdSchema,
+    participantId: BattleParticipantIdSchema,
     previousCount: Type.Integer({ minimum: 0, maximum: SAFE_INTEGER_MAX }),
     nextCount: Type.Integer({ minimum: 1, maximum: SAFE_INTEGER_MAX }),
     source: Type.Union([Type.Literal("command"), Type.Literal("split")]),
@@ -25,8 +26,8 @@ export const CellCapturedEventSchema = Type.Object(
   {
     kind: Type.Literal("cellCaptured"),
     position: PositionSchema,
-    playerId: PlayerIdSchema,
-    previousPlayerId: Type.Union([PlayerIdSchema, Type.Null()]),
+    participantId: BattleParticipantIdSchema,
+    previousParticipantId: Type.Union([BattleParticipantIdSchema, Type.Null()]),
     previousCount: Type.Integer({ minimum: 0, maximum: SAFE_INTEGER_MAX }),
     nextCount: Type.Integer({ minimum: 1, maximum: SAFE_INTEGER_MAX }),
   },
@@ -49,7 +50,7 @@ export const CellSplitEventSchema = Type.Object(
   {
     kind: Type.Literal("cellSplit"),
     position: PositionSchema,
-    playerId: PlayerIdSchema,
+    participantId: BattleParticipantIdSchema,
     count: Type.Integer({ minimum: 1, maximum: SAFE_INTEGER_MAX }),
   },
   { additionalProperties: false },
@@ -59,17 +60,27 @@ export const CellSplitEventSchema = Type.Object(
 export const CooldownStartedEventSchema = Type.Object(
   {
     kind: Type.Literal("cooldownStarted"),
-    playerId: PlayerIdSchema,
+    participantId: BattleParticipantIdSchema,
     nextActionTick: TickSchema,
   },
   { additionalProperties: false },
 );
 
-/** Runtime schema for the terminal winner event. */
-export const BattleWonEventSchema = Type.Object(
+/** Runtime schema for an authoritative participant lifecycle transition. */
+export const ParticipantStatusChangedEventSchema = Type.Object(
   {
-    kind: Type.Literal("battleWon"),
-    winnerId: PlayerIdSchema,
+    kind: Type.Literal("participantStatusChanged"),
+    participantId: BattleParticipantIdSchema,
+    status: ParticipationStatusSchema,
+  },
+  { additionalProperties: false },
+);
+
+/** Runtime schema for a terminal outcome, including a no-winner outcome. */
+export const BattleFinishedEventSchema = Type.Object(
+  {
+    kind: Type.Literal("battleFinished"),
+    winnerId: Type.Union([BattleParticipantIdSchema, Type.Null()]),
   },
   { additionalProperties: false },
 );
@@ -81,7 +92,8 @@ export const BattleEventSchema = Type.Union([
   SplitScheduledEventSchema,
   CellSplitEventSchema,
   CooldownStartedEventSchema,
-  BattleWonEventSchema,
+  ParticipantStatusChangedEventSchema,
+  BattleFinishedEventSchema,
 ]);
 /** Event emitted by an accepted command or simulation tick. */
 export type BattleEvent = Type.Static<typeof BattleEventSchema>;
@@ -89,7 +101,8 @@ export type BattleEvent = Type.Static<typeof BattleEventSchema>;
 /** Runtime schema for stable command-rejection reason codes. */
 export const CommandRejectionReasonSchema = Type.Union([
   Type.Literal("battleFinished"),
-  Type.Literal("unknownPlayer"),
+  Type.Literal("unknownParticipant"),
+  Type.Literal("participantInactive"),
   Type.Literal("outOfBounds"),
   Type.Literal("notOccupied"),
   Type.Literal("notOwner"),
