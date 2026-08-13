@@ -2,6 +2,10 @@ export type ViewportTransform = Readonly<{ x: number; y: number; scale: number }
 export type ViewportSize = Readonly<{ width: number; height: number }>;
 export type ViewportPoint = Readonly<{ x: number; y: number }>;
 export type ViewportRect = Readonly<{ x: number; y: number; width: number; height: number }>;
+export type ViewportCamera = Readonly<{
+  size: ViewportSize;
+  transform: ViewportTransform;
+}>;
 
 export const MIN_WORLD_SCALE = 0.65;
 export const MAX_WORLD_SCALE = 3.5;
@@ -31,6 +35,28 @@ export function clampTransform(
       : Math.min(0, Math.max(minY, transform.y)),
     scale,
   };
+}
+
+/** Initializes from a measured viewport, then preserves and bounds the camera on later resizes. */
+export function resizeViewportCamera(
+  current: ViewportCamera | null,
+  size: ViewportSize,
+  content: ViewportSize,
+): ViewportCamera {
+  const transform = clampTransform(
+    current?.transform ?? { x: 0, y: 0, scale: 1 },
+    size,
+    content,
+  );
+  if (
+    current !== null
+    && current.size.width === size.width
+    && current.size.height === size.height
+    && current.transform.x === transform.x
+    && current.transform.y === transform.y
+    && current.transform.scale === transform.scale
+  ) return current;
+  return { size, transform };
 }
 
 export function panTransform(

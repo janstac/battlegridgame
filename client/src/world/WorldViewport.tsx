@@ -1,13 +1,14 @@
 import type { PointerEvent as ReactPointerEvent, ReactNode, WheelEvent } from "react";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
   centroid,
-  clampTransform,
   distance,
   exceedsDragThreshold,
   panTransform,
+  resizeViewportCamera,
   zoomTransform,
+  type ViewportCamera,
   type ViewportPoint,
   type ViewportSize,
   type ViewportTransform,
@@ -38,22 +39,21 @@ export function WorldViewport({ children }: WorldViewportProps) {
   const gestureStartRef = useRef<ViewportPoint | null>(null);
   const draggingRef = useRef(false);
   const movedRef = useRef(false);
-  const [size, setSize] = useState<ViewportSize>({ width: 640, height: 640 });
-  const [transform, setTransform] = useState<ViewportTransform>({ x: 0, y: 0, scale: 1 });
+  const [camera, setCamera] = useState<ViewportCamera | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const host = hostRef.current;
     if (host === null) return;
-    const update = () => setSize({ width: host.clientWidth, height: host.clientHeight });
+    const update = () => {
+      const size = { width: host.clientWidth, height: host.clientHeight };
+      if (size.width <= 0 || size.height <= 0) return;
+      setCamera((current) => resizeViewportCamera(current, size, WORLD_CONTENT_SIZE));
+    };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(host);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    setTransform((current) => clampTransform(current, size, WORLD_CONTENT_SIZE));
-  }, [size]);
 
   const pointerPoint = (event: ReactPointerEvent): ViewportPoint => {
     const bounds = hostRef.current?.getBoundingClientRect();
@@ -101,17 +101,24 @@ export function WorldViewport({ children }: WorldViewportProps) {
       gestureRef.current = { centroid: nextCentroid, distance: null };
       return;
     }
-    setTransform((current) => {
-      let next = panTransform(current, {
+    setCamera((current) => {
+      if (current === null) return current;
+      let transform = panTransform(current.transform, {
         x: nextCentroid.x - prior.centroid.x,
         y: nextCentroid.y - prior.centroid.y,
-      }, size, WORLD_CONTENT_SIZE);
+      }, current.size, WORLD_CONTENT_SIZE);
       if (points.length > 1 && prior.distance !== null && prior.distance > 0) {
         const nextDistance = distance(points[0]!, points[1]!);
         if (Math.abs(nextDistance - prior.distance) >= 1) movedRef.current = true;
-        next = zoomTransform(next, next.scale * nextDistance / prior.distance, nextCentroid, size, WORLD_CONTENT_SIZE);
+        transform = zoomTransform(
+          transform,
+          transform.scale * nextDistance / prior.distance,
+          nextCentroid,
+          current.size,
+          WORLD_CONTENT_SIZE,
+        );
       }
-      return next;
+      return { ...current, transform };
     });
     gestureRef.current = {
       centroid: nextCentroid,
@@ -126,44 +133,53 @@ export function WorldViewport({ children }: WorldViewportProps) {
     if (pointersRef.current.size === 0) draggingRef.current = false;
   };
 
-  const zoomAtCenter = (factor: number) => setTransform((current) => zoomTransform(
-    current,
-    current.scale * factor,
-    { x: size.width / 2, y: size.height / 2 },
-    size,
-    WORLD_CONTENT_SIZE,
-  ));
+  const zoomAtCenter = (factor: number) => setCamera((current) => current === null ? current : ({
+    ...current,
+    transform: zoomTransform(
+      current.transform,
+      current.transform.scale * factor,
+      { x: current.size.width / 2, y: current.size.height / 2 },
+      current.size,
+      WORLD_CONTENT_SIZE,
+    ),
+  }));
 
   const onWheel = (event: WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
     const bounds = event.currentTarget.getBoundingClientRect();
-    const deltaScale = event.deltaMode === 1
-      ? 16
-      : event.deltaMode === 2
-        ? Math.max(1, size.height)
-        : 1;
-    const deltaY = event.deltaY * deltaScale;
-    setTransform((current) => zoomTransform(
-      current,
-      current.scale * Math.exp(-deltaY * 0.0015),
-      { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
-      size,
-      WORLD_CONTENT_SIZE,
-    ));
+    setCamera((current) => {
+      if (current === null) return current;
+      const deltaScale = event.deltaMode === 1
+        ? 16
+        : event.deltaMode === 2
+          ? Math.max(1, current.size.height)
+          : 1;
+      const deltaY = event.deltaY * deltaScale;
+      return {
+        ...current,
+        transform: zoomTransform(
+          current.transform,
+          current.transform.scale * Math.exp(-deltaY * 0.0015),
+          { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+          current.size,
+          WORLD_CONTENT_SIZE,
+        ),
+      };
+    });
   };
 
-  const projection = useMemo<WorldViewportProjection>(() => ({
-    transform,
-    viewportSize: size,
+  const projection = useMemo<WorldViewportProjection | null>(() => camera === null ? null : ({
+    transform: camera.transform,
+    viewportSize: camera.size,
     contentSize: WORLD_CONTENT_SIZE,
-  }), [size, transform]);
+  }), [camera]);
 
   return (
     <WorldViewportContext.Provider value={projection}>
       <section className={styles.shell} aria-label="Interactive World map">
         <div className={styles.controls}>
           <button type="button" aria-label="Zoom out" onClick={() => zoomAtCenter(0.8)}>−</button>
-          <output aria-label="World zoom">{Math.round(transform.scale * 100)}%</output>
+          <output aria-label="World zoom">{Math.round((camera?.transform.scale ?? 1) * 100)}%</output>
           <button type="button" aria-label="Zoom in" onClick={() => zoomAtCenter(1.25)}>+</button>
         </div>
         <div
@@ -183,7 +199,7 @@ export function WorldViewport({ children }: WorldViewportProps) {
             }
           }}
         >
-          {children}
+          {projection === null ? null : children}
         </div>
         <p className={styles.hint}>Drag to pan. Scroll or pinch to zoom.</p>
       </section>

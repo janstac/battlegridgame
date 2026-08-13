@@ -13,6 +13,7 @@ import {
   logicalViewBox,
   panTransform,
   projectLogicalPoint,
+  resizeViewportCamera,
   zoomTransform,
 } from "../src/world/viewportMath.ts";
 
@@ -22,6 +23,37 @@ test("viewport scale and translation are clamped to keep content visible", () =>
   assert.deepEqual(
     clampTransform({ x: 99, y: -999, scale: 1 }, { width: 400, height: 300 }, { width: 640, height: 640 }),
     { x: 0, y: -340, scale: 1 },
+  );
+});
+
+test("viewport camera initializes from measured dimensions before projection", () => {
+  assert.deepEqual(
+    resizeViewportCamera(null, { width: 1_280, height: 800 }, { width: 640, height: 640 }),
+    {
+      size: { width: 1_280, height: 800 },
+      transform: { x: 320, y: 80, scale: 1 },
+    },
+  );
+});
+
+test("viewport camera preserves valid state across resizes and clamps only when required", () => {
+  const camera = {
+    size: { width: 500, height: 400 },
+    transform: { x: -100, y: -120, scale: 2 },
+  };
+  assert.deepEqual(
+    resizeViewportCamera(camera, { width: 700, height: 500 }, { width: 640, height: 640 }),
+    {
+      size: { width: 700, height: 500 },
+      transform: { x: -100, y: -120, scale: 2 },
+    },
+  );
+  assert.deepEqual(
+    resizeViewportCamera(camera, { width: 1_300, height: 1_300 }, { width: 640, height: 640 }),
+    {
+      size: { width: 1_300, height: 1_300 },
+      transform: { x: 10, y: 10, scale: 2 },
+    },
   );
 });
 
