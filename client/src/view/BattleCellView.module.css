@@ -3,23 +3,23 @@
 }
 
 .surface {
-  fill: #172235;
-  stroke: #2b3a50;
+  fill: var(--color-battle-cell);
+  stroke: var(--color-border);
   stroke-width: 0.035;
   transition: filter 120ms ease, stroke-width 120ms ease;
 }
 
 .empty .surface {
-  fill: #141f30;
+  fill: var(--color-battle-empty);
 }
 
 .wall .surface {
-  fill: #293140;
-  stroke: #4b5668;
+  fill: var(--color-battle-wall);
+  stroke: var(--color-battle-wall-border);
 }
 
 .wallMark {
-  color: #758094;
+  color: var(--color-battle-wall-mark);
   fill: none;
   stroke-width: 0.055;
   stroke-linecap: round;
@@ -32,11 +32,12 @@
 .interactive:hover .surface,
 .surface:focus-visible {
   filter: brightness(1.18);
-  stroke: #ffffff;
+  stroke: var(--color-focus);
   stroke-width: 0.065;
 }
 
 .count {
+  fill: var(--player-color);
   font-size: 0.43px;
   font-weight: 800;
   pointer-events: none;
@@ -44,11 +45,16 @@
 }
 
 .pending {
-  fill: #ffffff;
-  stroke: #121b29;
+  fill: var(--color-pending-mark);
+  stroke: var(--color-pending-border);
   stroke-width: 0.025;
   pointer-events: none;
 }
+
+.player0 { --player-color: var(--battle-player-color-0); }
+.player1 { --player-color: var(--battle-player-color-1); }
+.player2 { --player-color: var(--battle-player-color-2); }
+.player3 { --player-color: var(--battle-player-color-3); }
 
 @media (prefers-reduced-motion: reduce) {
   .surface {

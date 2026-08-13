@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { ThemeControl } from "../theme/index.ts";
 import styles from "./GamePage.module.css";
 
 export type GamePageProps = Readonly<{
@@ -18,6 +19,9 @@ export function GamePage({
 }: GamePageProps) {
   return (
     <main className={styles.page}>
+      <div className={styles.themeControl}>
+        <ThemeControl />
+      </div>
       <header className={styles.header}>
         <p className={styles.eyebrow}>{eyebrow}</p>
         <h1>{title}</h1>

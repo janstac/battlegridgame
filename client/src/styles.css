@@ -1,6 +1,8 @@
+@import "./theme.css";
+
 :root {
-  color: #e8edf7;
-  background: #0c1220;
+  color: var(--color-page-text);
+  background: var(--color-page-background);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -17,8 +19,8 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at 18% 4%, #182a49 0, transparent 34rem),
-    #0c1220;
+    radial-gradient(circle at 18% 4%, var(--color-page-glow) 0, transparent 34rem),
+    var(--color-page-background);
 }
 
 button,

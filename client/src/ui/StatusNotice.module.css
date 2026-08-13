@@ -1,17 +1,17 @@
 .notice {
   margin: 1rem 0 0;
   padding: 0.75rem 0.9rem;
-  border-radius: 0.6rem;
+  border-radius: var(--radius-medium);
   font-size: 0.84rem;
   line-height: 1.5;
 }
 
 .progress {
-  color: #d6e1f3;
-  background: #1b2d49;
+  color: var(--color-text-primary);
+  background: var(--color-accent-soft);
 }
 
 .error {
-  color: #ffd1d7;
-  background: #49232c;
+  color: var(--color-error-text);
+  background: var(--color-error-background);
 }

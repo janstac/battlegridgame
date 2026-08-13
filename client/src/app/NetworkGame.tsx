@@ -167,6 +167,7 @@ function WorldScreen({
             localPlayerId={localPlayerId}
             now={now}
             interactive
+            selectedPosition={selected}
             onCellActivate={setSelected}
           />
         </WorldViewport>

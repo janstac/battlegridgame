@@ -1,21 +1,21 @@
 .button {
   min-height: 2.6rem;
   padding: 0 1rem;
-  border: 1px solid #7196ef;
-  border-radius: 0.6rem;
-  color: #071124;
+  border: 1px solid var(--color-accent-control);
+  border-radius: var(--radius-medium);
+  color: var(--color-text-on-accent);
   font-weight: 750;
-  background: #8cafff;
+  background: var(--color-accent-control);
   cursor: pointer;
 }
 
 .button:hover:not(:disabled) {
-  border-color: #a9c2ff;
-  background: #a9c2ff;
+  border-color: var(--color-accent-control-hover);
+  background: var(--color-accent-control-hover);
 }
 
 .button:focus-visible {
-  outline: 3px solid #8cafff;
+  outline: var(--focus-outline);
   outline-offset: 2px;
 }
 
@@ -25,12 +25,12 @@
 }
 
 .secondary {
-  border-color: #3a4a63;
-  color: #eef3fb;
-  background: #1a2639;
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
+  background: var(--color-surface-interactive);
 }
 
 .secondary:hover:not(:disabled) {
-  border-color: #526887;
-  background: #24344d;
+  border-color: var(--color-border-interactive);
+  background: var(--color-surface-interactive-hover);
 }

@@ -1,13 +1,14 @@
 import type { PlayerId, Position, WorldSnapshot } from "@grid-game/shared";
+import type { CSSProperties } from "react";
 
 import styles from "./WorldGridView.module.css";
 
-const WORLD_COLORS = ["#3978df", "#dd5369", "#d7a327", "#2c9c76", "#8c68d8", "#d7772f"];
+const WORLD_COLOR_COUNT = 6;
 
 export function worldPlayerColor(playerId: PlayerId): string {
   let hash = 0;
   for (const character of playerId) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-  return WORLD_COLORS[hash % WORLD_COLORS.length] ?? WORLD_COLORS[0]!;
+  return `var(--world-player-color-${hash % WORLD_COLOR_COUNT})`;
 }
 
 export type WorldGridViewProps = Readonly<{
@@ -15,6 +16,7 @@ export type WorldGridViewProps = Readonly<{
   localPlayerId: PlayerId;
   now: number;
   interactive?: boolean;
+  selectedPosition?: Position | null;
   onCellActivate?(position: Position): void;
 }>;
 
@@ -23,6 +25,7 @@ export function WorldGridView({
   localPlayerId,
   now,
   interactive = false,
+  selectedPosition = null,
   onCellActivate,
 }: WorldGridViewProps) {
   const { width, height, cells } = snapshot.grid;
@@ -40,11 +43,15 @@ export function WorldGridView({
           (cell.kind === "occupied" && cell.playerId !== localPlayerId)
           || cell.kind === "challengePending"
         );
-        const fill = cell.kind === "occupied"
-          ? worldPlayerColor(cell.playerId)
-          : cell.kind === "challengePending"
-            ? "#8b5b24"
-            : cell.kind === "battle" ? "#643f8f" : "#172235";
+        const selected = selectedPosition?.x === position.x
+          && selectedPosition.y === position.y;
+        const className = [
+          styles[cell.kind],
+          actionable ? styles.actionable : undefined,
+        ].filter(Boolean).join(" ");
+        const style = cell.kind === "occupied"
+          ? { "--world-player-color": worldPlayerColor(cell.playerId) } as CSSProperties
+          : undefined;
         const label = cell.kind === "challengePending"
           ? `${Math.max(0, Math.ceil((cell.closesAt - now) / 1_000))}s`
           : cell.kind === "battle" ? "⚔" : cell.kind === "occupied" ? "●" : "";
@@ -57,7 +64,8 @@ export function WorldGridView({
               : `Cell ${position.x + 1}, ${position.y + 1}, battle with ${cell.playerIds.length} players`;
         return (
           <g
-            className={actionable ? styles.actionable : undefined}
+            className={className}
+            style={style}
             key={index}
             transform={`translate(${position.x} ${position.y})`}
             role="gridcell"
@@ -71,7 +79,10 @@ export function WorldGridView({
               }
             } : undefined}
           >
-            <rect className={styles.cell} x="0.04" y="0.04" width="0.92" height="0.92" rx="0.1" fill={fill} />
+            <rect className={styles.cell} x="0.04" y="0.04" width="0.92" height="0.92" rx="0.1" />
+            {selected && (
+              <rect className={styles.selectionOutline} x="0.08" y="0.08" width="0.84" height="0.84" rx="0.08" />
+            )}
             {cell.kind === "challengePending" && cell.participantIds.map((participantId, participantIndex) => (
               <circle
                 key={participantId}

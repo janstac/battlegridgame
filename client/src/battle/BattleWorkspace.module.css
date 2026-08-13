@@ -7,30 +7,30 @@
   overflow: auto;
   padding: .15rem;
 }
-.tile { min-width: 0; border-radius: 1rem; background: #0b1422; }
+.tile { min-width: 0; border-radius: var(--radius-panel); background: var(--color-surface-deep); }
 .tileHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: .7rem;
   padding: .7rem .8rem;
-  border: 1px solid #2e4059;
-  border-radius: .8rem .8rem 0 0;
-  color: #eef4ff;
-  background: #142137;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-large) var(--radius-large) 0 0;
+  color: var(--color-text-primary);
+  background: var(--color-surface-muted);
 }
 .tileHeader div:first-child { display: grid; gap: .12rem; }
-.tileHeader span { color: #95a6bf; font-size: .72rem; }
+.tileHeader span { color: var(--color-text-muted); font-size: .72rem; }
 .tileActions { display: flex; gap: .3rem; }
 .tileActions button {
   min-width: 2rem;
   min-height: 2rem;
-  border: 1px solid #526782;
-  border-radius: .4rem;
-  color: #fff;
-  background: #1d2e47;
+  border: 1px solid var(--color-border-interactive);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  background: var(--color-surface-interactive);
   cursor: pointer;
 }
 .tileActions button:disabled { opacity: .35; cursor: default; }
-.tileActions .leave { padding-inline: .6rem; color: #ffd1d8; border-color: #784755; }
-.empty { padding: 2rem; border: 1px dashed #3e5069; border-radius: 1rem; color: #9eacc0; text-align: center; }
+.tileActions .leave { padding-inline: .6rem; color: var(--color-error-text); border-color: var(--color-error-border); }
+.empty { padding: 2rem; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-panel); color: var(--color-text-muted); text-align: center; }

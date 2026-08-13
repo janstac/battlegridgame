@@ -3,31 +3,31 @@
 .tabs { display: flex; gap: .45rem; margin-bottom: 1rem; }
 .tabs button {
   padding: .65rem 1rem;
-  border: 1px solid #394d69;
-  border-radius: .6rem;
-  color: #aebdd2;
-  background: #121e30;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-medium);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
   cursor: pointer;
 }
-.tabs button[aria-current="page"] { color: #fff; border-color: #769df4; background: #20365a; }
-.tabs span { margin-left: .3rem; padding: .08rem .38rem; border-radius: 1rem; background: #0a1423; }
+.tabs button[aria-current="page"] { color: var(--color-text-primary); border-color: var(--color-accent); background: var(--color-surface-active); }
+.tabs span { margin-left: .3rem; padding: .08rem .38rem; border-radius: var(--radius-pill); background: var(--color-surface-deep); }
 .worldLayout { display: grid; grid-template-columns: minmax(0, 1fr) 17rem; gap: 1rem; align-items: start; }
 .worldDetail {
   display: grid;
   gap: .8rem;
   padding: 1rem;
-  border: 1px solid #33465f;
-  border-radius: .8rem;
-  color: #a9b6c9;
-  background: #111c2c;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-large);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-raised);
 }
 .worldDetail > div:first-child { display: grid; gap: .22rem; }
-.worldDetail strong { color: #f1f5fc; }
-.coordinate { color: #7e91ac; font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }
-.owned { color: #a9d9c7; }
+.worldDetail strong { color: var(--color-text-primary); }
+.coordinate { color: var(--color-text-subtle); font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }
+.owned { color: var(--color-success-text); }
 .challengeDetail { display: grid; gap: .65rem; }
 .roster { display: grid; gap: .35rem; }
-.roster span { display: flex; align-items: center; gap: .4rem; color: #ced8e8; font-size: .82rem; }
+.roster span { display: flex; align-items: center; gap: .4rem; color: var(--color-text-primary); font-size: .82rem; }
 .roster i { width: .65rem; height: .65rem; border-radius: 50%; }
 .battlesLayout { display: flex; align-items: flex-start; gap: 1rem; }
 .workspaceWrap { flex: 1; min-width: 0; }

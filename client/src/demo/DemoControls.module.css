@@ -4,13 +4,13 @@
   align-items: center;
   gap: 0.7rem;
   padding: 0.8rem;
-  border: 1px solid #29364c;
-  border-radius: 0.8rem;
-  background: #121b2a;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-large);
+  background: var(--color-surface-muted);
 }
 
 .label {
-  color: #aeb9ca;
+  color: var(--color-text-secondary);
   font-size: 0.85rem;
   font-weight: 700;
 }
@@ -18,14 +18,14 @@
 .select {
   min-height: 2.5rem;
   padding: 0 2.4rem 0 0.75rem;
-  border: 1px solid #3a4a63;
+  border: 1px solid var(--color-border-strong);
   border-radius: 0.55rem;
-  color: #f4f7fc;
-  background: #1a2639;
+  color: var(--color-text-primary);
+  background: var(--color-surface-interactive);
 }
 
 .select:focus-visible {
-  outline: 3px solid #8cafff;
+  outline: var(--focus-outline);
   outline-offset: 2px;
 }
 

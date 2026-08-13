@@ -1,9 +1,9 @@
 .panel {
   padding: clamp(1rem, 2.6vw, 1.75rem);
-  border: 1px solid #29364c;
-  border-radius: 1rem;
-  background: rgb(17 26 41 / 92%);
-  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 25%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface-panel);
+  box-shadow: var(--shadow-panel);
 }
 
 .header {
@@ -15,13 +15,13 @@
 
 .headingGroup h2 {
   margin: 0;
-  color: #ffffff;
+  color: var(--color-heading);
   font-size: 1.3rem;
 }
 
 .eyebrow {
   margin: 0 0 0.75rem;
-  color: #78a0ff;
+  color: var(--color-accent);
   font-size: 0.75rem;
   font-weight: 750;
   letter-spacing: 0.16em;
@@ -32,15 +32,15 @@
   flex: none;
   margin: 0;
   padding: 0.45rem 0.7rem;
-  border: 1px solid #3a4a63;
-  border-radius: 999px;
-  color: #aeb9ca;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-secondary);
   font-size: 0.82rem;
-  background: #182438;
+  background: var(--color-surface-interactive);
 }
 
 .identity strong {
-  color: #ffffff;
+  color: var(--color-heading);
 }
 
 .players {
@@ -52,7 +52,7 @@
 
 .players legend {
   margin-bottom: 0.65rem;
-  color: #aeb9ca;
+  color: var(--color-text-secondary);
   font-size: 0.82rem;
   font-weight: 700;
 }
@@ -70,20 +70,20 @@
   align-items: center;
   gap: 0.65rem;
   padding: 0.65rem 0.75rem;
-  border: 1px solid #33435b;
-  border-radius: 0.65rem;
-  color: #dfe7f4;
-  background: #151f30;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  color: var(--color-text-primary);
+  background: var(--color-surface-raised);
   cursor: pointer;
 }
 
 .player:hover {
-  border-color: #526887;
-  background: #19263a;
+  border-color: var(--color-border-interactive);
+  background: var(--color-surface-interactive-hover);
 }
 
 .player:has(input:focus-visible) {
-  outline: 3px solid #8cafff;
+  outline: var(--focus-outline);
   outline-offset: 2px;
 }
 
@@ -95,7 +95,7 @@
   width: 1rem;
   height: 1rem;
   margin: 0;
-  accent-color: #8cafff;
+  accent-color: var(--color-accent-control);
 }
 
 .playerName {
@@ -106,7 +106,7 @@
 
 .localBadge {
   margin-left: auto;
-  color: #b9f4db;
+  color: var(--color-success-text);
   font-size: 0.72rem;
   font-weight: 750;
   letter-spacing: 0.08em;
@@ -115,15 +115,15 @@
 
 .empty,
 .selectionCount {
-  color: #929fb4;
+  color: var(--color-text-muted);
   font-size: 0.84rem;
 }
 
 .empty {
   margin: 0;
   padding: 1rem;
-  border: 1px dashed #33435b;
-  border-radius: 0.65rem;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
   text-align: center;
 }
 

@@ -4,11 +4,11 @@
   max-width: min(44rem, 100%);
   max-height: min(70vh, 42rem);
   margin: 0 auto;
-  filter: drop-shadow(0 0.8rem 1rem rgb(0 0 0 / 22%));
+  filter: drop-shadow(var(--shadow-grid));
 }
 
 .backdrop {
-  fill: #080d16;
+  fill: var(--color-battle-backdrop);
   rx: 0.18px;
 }
 

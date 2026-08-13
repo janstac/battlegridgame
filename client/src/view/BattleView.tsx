@@ -2,7 +2,7 @@ import type { BattleParticipantId } from "@grid-game/shared";
 
 import type { ClientBattleState } from "../model/index.ts";
 import {
-  PLAYER_COLORS,
+  playerColorClassName,
   type PlayerColorId,
 } from "./BattleCellView.tsx";
 import { BattleGridView } from "./BattleGridView.tsx";
@@ -70,18 +70,14 @@ export function BattleView({
           if (playerColorId === undefined) {
             throw new Error(`Missing color ID for participant ${participantId}`);
           }
-          const colors = PLAYER_COLORS[playerColorId];
           return (
             <span
-              className={`${styles.player} ${
+              className={`${styles.player} ${playerColorClassName(playerColorId)} ${
                 participantId === state.localParticipantId ? styles.activePlayer : ""
               }`}
               key={participantId}
             >
-              <span
-                className={styles.swatch}
-                style={{ backgroundColor: colors.fill }}
-              />
+              <span className={styles.swatch} aria-hidden="true" />
               {participantLabels?.get(participantId) ?? `Player ${participantId + 1}`}
               {status === "active" ? "" : ` (${status})`}
             </span>

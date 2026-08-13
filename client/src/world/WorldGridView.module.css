@@ -5,20 +5,33 @@
   user-select: none;
 }
 
-.backdrop { fill: #090f1b; }
+.backdrop { fill: var(--color-world-backdrop); }
 
 .cell {
-  stroke: #52627a;
+  fill: var(--color-world-empty);
+  stroke: var(--color-world-cell-border);
   stroke-width: 0.035;
   vector-effect: non-scaling-stroke;
 }
 
 .actionable { cursor: pointer; outline: none; }
 .actionable:hover .cell,
-.actionable:focus-visible .cell { stroke: #fff; stroke-width: 0.08; }
+.actionable:focus-visible .cell { stroke: var(--color-focus); stroke-width: 0.08; }
+
+.occupied .cell { fill: var(--world-player-color); }
+.challengePending .cell { fill: var(--color-world-challenge); }
+.battle .cell { fill: var(--color-world-battle); }
+
+.selectionOutline {
+  fill: none;
+  stroke: var(--color-selection);
+  stroke-width: 0.09;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
 
 .label {
-  fill: #fff;
+  fill: var(--color-heading);
   font-size: 0.29px;
   font-weight: 800;
   text-anchor: middle;
