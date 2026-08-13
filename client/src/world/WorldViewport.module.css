@@ -10,13 +10,6 @@
   cursor: grab;
 }
 .viewport:active { cursor: grabbing; }
-.content {
-  position: absolute;
-  width: 640px;
-  height: 640px;
-  transform-origin: 0 0;
-  will-change: transform;
-}
 .controls {
   position: absolute;
   z-index: 2;

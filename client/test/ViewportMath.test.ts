@@ -10,7 +10,9 @@ import {
   clampTransform,
   distance,
   exceedsDragThreshold,
+  logicalViewBox,
   panTransform,
+  projectLogicalPoint,
   zoomTransform,
 } from "../src/world/viewportMath.ts";
 
@@ -36,6 +38,31 @@ test("anchored zoom preserves the content point beneath the anchor", () => {
   const after = zoomTransform(before, 2, anchor, { width: 400, height: 300 }, { width: 1_000, height: 1_000 });
   assert.equal((anchor.x - before.x) / before.scale, (anchor.x - after.x) / after.scale);
   assert.equal((anchor.y - before.y) / before.scale, (anchor.y - after.y) / after.scale);
+});
+
+test("SVG viewBox represents the transformed visible content without raster scaling", () => {
+  assert.deepEqual(
+    logicalViewBox(
+      { x: -320, y: -160, scale: 2 },
+      { width: 640, height: 320 },
+      { width: 32, height: 32 },
+      { width: 640, height: 640 },
+    ),
+    { x: 8, y: 4, width: 16, height: 8 },
+  );
+});
+
+test("SVG viewBox and HTML overlays share fitted logical coordinates", () => {
+  const transform = { x: -100, y: -50, scale: 1.5 };
+  const viewport = { width: 500, height: 300 };
+  const logical = { width: 20, height: 10 };
+  const content = { width: 640, height: 640 };
+  const point = { x: 12, y: 4 };
+  const viewBox = logicalViewBox(transform, viewport, logical, content);
+  const projected = projectLogicalPoint(point, transform, logical, content);
+
+  assert.ok(Math.abs(projected.x - (point.x - viewBox.x) / viewBox.width * viewport.width) < 1e-9);
+  assert.ok(Math.abs(projected.y - (point.y - viewBox.y) / viewBox.height * viewport.height) < 1e-9);
 });
 
 test("pinch helpers calculate centroid and distance", () => {

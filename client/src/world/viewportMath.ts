@@ -1,6 +1,7 @@
 export type ViewportTransform = Readonly<{ x: number; y: number; scale: number }>;
 export type ViewportSize = Readonly<{ width: number; height: number }>;
 export type ViewportPoint = Readonly<{ x: number; y: number }>;
+export type ViewportRect = Readonly<{ x: number; y: number; width: number; height: number }>;
 
 export const MIN_WORLD_SCALE = 0.65;
 export const MAX_WORLD_SCALE = 3.5;
@@ -60,6 +61,42 @@ export function zoomTransform(
     x: anchor.x - (anchor.x - transform.x) * ratio,
     y: anchor.y - (anchor.y - transform.y) * ratio,
   }, viewport, content);
+}
+
+/** Returns the logical rectangle visible through a transformed content viewport. */
+export function logicalViewBox(
+  transform: ViewportTransform,
+  viewport: ViewportSize,
+  logical: ViewportSize,
+  content: ViewportSize,
+): ViewportRect {
+  const fitScale = Math.min(content.width / logical.width, content.height / logical.height);
+  const fittedWidth = logical.width * fitScale;
+  const fittedHeight = logical.height * fitScale;
+  const offsetX = (content.width - fittedWidth) / 2;
+  const offsetY = (content.height - fittedHeight) / 2;
+  return {
+    x: ((-transform.x / transform.scale) - offsetX) / fitScale,
+    y: ((-transform.y / transform.scale) - offsetY) / fitScale,
+    width: viewport.width / transform.scale / fitScale,
+    height: viewport.height / transform.scale / fitScale,
+  };
+}
+
+/** Projects a point in fitted logical content into viewport pixels. */
+export function projectLogicalPoint(
+  point: ViewportPoint,
+  transform: ViewportTransform,
+  logical: ViewportSize,
+  content: ViewportSize,
+): ViewportPoint {
+  const fitScale = Math.min(content.width / logical.width, content.height / logical.height);
+  const offsetX = (content.width - logical.width * fitScale) / 2;
+  const offsetY = (content.height - logical.height * fitScale) / 2;
+  return {
+    x: transform.x + (offsetX + point.x * fitScale) * transform.scale,
+    y: transform.y + (offsetY + point.y * fitScale) * transform.scale,
+  };
 }
 
 export function distance(first: ViewportPoint, second: ViewportPoint): number {

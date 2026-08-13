@@ -1,5 +1,5 @@
 import type { PointerEvent as ReactPointerEvent, ReactNode, WheelEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   centroid,
@@ -14,8 +14,20 @@ import {
 } from "./viewportMath.ts";
 import styles from "./WorldViewport.module.css";
 
-const CONTENT_SIZE = { width: 640, height: 640 } as const;
+export const WORLD_CONTENT_SIZE = { width: 640, height: 640 } as const;
 const DRAG_THRESHOLD = 6;
+
+export type WorldViewportProjection = Readonly<{
+  transform: ViewportTransform;
+  viewportSize: ViewportSize;
+  contentSize: ViewportSize;
+}>;
+
+const WorldViewportContext = createContext<WorldViewportProjection | null>(null);
+
+export function useWorldViewportProjection(): WorldViewportProjection | null {
+  return useContext(WorldViewportContext);
+}
 
 export type WorldViewportProps = Readonly<{ children: ReactNode }>;
 
@@ -40,7 +52,7 @@ export function WorldViewport({ children }: WorldViewportProps) {
   }, []);
 
   useEffect(() => {
-    setTransform((current) => clampTransform(current, size, CONTENT_SIZE));
+    setTransform((current) => clampTransform(current, size, WORLD_CONTENT_SIZE));
   }, [size]);
 
   const pointerPoint = (event: ReactPointerEvent): ViewportPoint => {
@@ -93,11 +105,11 @@ export function WorldViewport({ children }: WorldViewportProps) {
       let next = panTransform(current, {
         x: nextCentroid.x - prior.centroid.x,
         y: nextCentroid.y - prior.centroid.y,
-      }, size, CONTENT_SIZE);
+      }, size, WORLD_CONTENT_SIZE);
       if (points.length > 1 && prior.distance !== null && prior.distance > 0) {
         const nextDistance = distance(points[0]!, points[1]!);
         if (Math.abs(nextDistance - prior.distance) >= 1) movedRef.current = true;
-        next = zoomTransform(next, next.scale * nextDistance / prior.distance, nextCentroid, size, CONTENT_SIZE);
+        next = zoomTransform(next, next.scale * nextDistance / prior.distance, nextCentroid, size, WORLD_CONTENT_SIZE);
       }
       return next;
     });
@@ -119,7 +131,7 @@ export function WorldViewport({ children }: WorldViewportProps) {
     current.scale * factor,
     { x: size.width / 2, y: size.height / 2 },
     size,
-    CONTENT_SIZE,
+    WORLD_CONTENT_SIZE,
   ));
 
   const onWheel = (event: WheelEvent<HTMLDivElement>) => {
@@ -136,42 +148,45 @@ export function WorldViewport({ children }: WorldViewportProps) {
       current.scale * Math.exp(-deltaY * 0.0015),
       { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
       size,
-      CONTENT_SIZE,
+      WORLD_CONTENT_SIZE,
     ));
   };
 
+  const projection = useMemo<WorldViewportProjection>(() => ({
+    transform,
+    viewportSize: size,
+    contentSize: WORLD_CONTENT_SIZE,
+  }), [size, transform]);
+
   return (
-    <section className={styles.shell} aria-label="Interactive World map">
-      <div className={styles.controls}>
-        <button type="button" aria-label="Zoom out" onClick={() => zoomAtCenter(0.8)}>−</button>
-        <output aria-label="World zoom">{Math.round(transform.scale * 100)}%</output>
-        <button type="button" aria-label="Zoom in" onClick={() => zoomAtCenter(1.25)}>+</button>
-      </div>
-      <div
-        ref={hostRef}
-        className={styles.viewport}
-        onWheel={onWheel}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={finishPointer}
-        onPointerCancel={finishPointer}
-        onLostPointerCapture={finishPointer}
-        onClickCapture={(event) => {
-          if (movedRef.current) {
-            event.preventDefault();
-            event.stopPropagation();
-            movedRef.current = false;
-          }
-        }}
-      >
+    <WorldViewportContext.Provider value={projection}>
+      <section className={styles.shell} aria-label="Interactive World map">
+        <div className={styles.controls}>
+          <button type="button" aria-label="Zoom out" onClick={() => zoomAtCenter(0.8)}>−</button>
+          <output aria-label="World zoom">{Math.round(transform.scale * 100)}%</output>
+          <button type="button" aria-label="Zoom in" onClick={() => zoomAtCenter(1.25)}>+</button>
+        </div>
         <div
-          className={styles.content}
-          style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})` }}
+          ref={hostRef}
+          className={styles.viewport}
+          onWheel={onWheel}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={finishPointer}
+          onPointerCancel={finishPointer}
+          onLostPointerCapture={finishPointer}
+          onClickCapture={(event) => {
+            if (movedRef.current) {
+              event.preventDefault();
+              event.stopPropagation();
+              movedRef.current = false;
+            }
+          }}
         >
           {children}
         </div>
-      </div>
-      <p className={styles.hint}>Drag to pan. Scroll or pinch to zoom.</p>
-    </section>
+        <p className={styles.hint}>Drag to pan. Scroll or pinch to zoom.</p>
+      </section>
+    </WorldViewportContext.Provider>
   );
 }

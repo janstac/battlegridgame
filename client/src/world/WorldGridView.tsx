@@ -1,7 +1,9 @@
 import type { PlayerId, Position, WorldSnapshot } from "@grid-game/shared";
 import type { CSSProperties } from "react";
 
+import { logicalViewBox } from "./viewportMath.ts";
 import styles from "./WorldGridView.module.css";
+import { useWorldViewportProjection } from "./WorldViewport.tsx";
 
 const WORLD_COLOR_COUNT = 6;
 
@@ -29,10 +31,19 @@ export function WorldGridView({
   onCellActivate,
 }: WorldGridViewProps) {
   const { width, height, cells } = snapshot.grid;
+  const projection = useWorldViewportProjection();
+  const viewBox = projection === null
+    ? { x: 0, y: 0, width, height }
+    : logicalViewBox(
+      projection.transform,
+      projection.viewportSize,
+      { width, height },
+      projection.contentSize,
+    );
   return (
     <svg
       className={styles.grid}
-      viewBox={`0 0 ${width} ${height}`}
+      viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
       role="grid"
       aria-label={`World grid, ${width} by ${height}`}
     >
