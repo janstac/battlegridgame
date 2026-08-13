@@ -6,7 +6,7 @@ import type {
   UnixTimestampMs,
 } from "@grid-game/shared";
 
-export const DEFAULT_CHALLENGE_DURATION_MS = 10_000;
+export const DEFAULT_CHALLENGE_DURATION_MS = 5_000;
 export const MAX_CHALLENGE_PARTICIPANTS = 4;
 
 export interface PendingChallengeClock {

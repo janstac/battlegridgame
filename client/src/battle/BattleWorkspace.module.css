@@ -1,27 +1,30 @@
 .workspace {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr));
+  display: flex;
   align-items: start;
-  gap: 1rem;
-  max-height: 76vh;
-  overflow: auto;
-  padding: .15rem;
+  gap: .75rem;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: .15rem .15rem .65rem;
+  scroll-snap-type: x proximity;
 }
-.tile { min-width: 0; border-radius: var(--radius-panel); background: var(--color-surface-deep); }
-.tileHeader {
+.tile {
+  flex: 0 0 min(46rem, calc(100vw - 16rem), calc(100dvh - 10rem));
+  min-width: 0;
+  border-radius: var(--radius-panel);
+  background: var(--color-surface-deep);
+  scroll-snap-align: start;
+}
+.tileActions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: .7rem;
-  padding: .7rem .8rem;
+  justify-content: flex-end;
+  gap: .25rem;
+  padding: .35rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-large) var(--radius-large) 0 0;
-  color: var(--color-text-primary);
   background: var(--color-surface-muted);
 }
-.tileHeader div:first-child { display: grid; gap: .12rem; }
-.tileHeader span { color: var(--color-text-muted); font-size: .72rem; }
-.tileActions { display: flex; gap: .3rem; }
 .tileActions button {
   min-width: 2rem;
   min-height: 2rem;
@@ -31,6 +34,23 @@
   background: var(--color-surface-interactive);
   cursor: pointer;
 }
+.tileActions button:focus-visible { outline: var(--focus-outline); outline-offset: 1px; }
 .tileActions button:disabled { opacity: .35; cursor: default; }
 .tileActions .leave { padding-inline: .6rem; color: var(--color-error-text); border-color: var(--color-error-border); }
 .empty { padding: 2rem; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-panel); color: var(--color-text-muted); text-align: center; }
+
+@media (orientation: portrait) {
+  .workspace {
+    flex-direction: column;
+    max-height: calc(100dvh - 10rem);
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: .15rem .65rem .15rem .15rem;
+    scroll-snap-type: y proximity;
+  }
+
+  .tile {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+}

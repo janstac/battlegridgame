@@ -25,6 +25,7 @@ import { GamePage } from "../ui/GamePage.tsx";
 import { StatusNotice } from "../ui/StatusNotice.tsx";
 import type { PlayerColorId } from "../view/index.ts";
 import {
+  WorldCellPopup,
   WorldGridView,
   WorldMiniViewer,
   WorldViewport,
@@ -72,7 +73,6 @@ function positionIndex(position: Position, width: number): number {
 
 function WorldDetail({
   cell,
-  position,
   localPlayerId,
   busy,
   onChallenge,
@@ -80,7 +80,6 @@ function WorldDetail({
   onLeave,
 }: Readonly<{
   cell: WorldCell;
-  position: Position;
   localPlayerId: PlayerId;
   busy: boolean;
   onChallenge(): void;
@@ -90,17 +89,15 @@ function WorldDetail({
   return (
     <aside className={styles.worldDetail} aria-live="polite">
       <div>
-        <span className={styles.coordinate}>Cell {position.x + 1}, {position.y + 1}</span>
         {cell.kind === "unoccupied" && <strong>Unoccupied</strong>}
-        {cell.kind === "occupied" && <strong>Owned by {cell.playerId}</strong>}
+        {cell.kind === "occupied" && (
+          <strong>{cell.playerId === localPlayerId ? "Your cell" : `Owned by ${cell.playerId}`}</strong>
+        )}
         {cell.kind === "challengePending" && <strong>Challenge gathering players</strong>}
         {cell.kind === "battle" && <strong>Battle in progress</strong>}
       </div>
       {cell.kind === "occupied" && cell.playerId !== localPlayerId && (
-        <ActionButton type="button" disabled={busy} onClick={onChallenge}>Challenge this cell</ActionButton>
-      )}
-      {cell.kind === "occupied" && cell.playerId === localPlayerId && (
-        <span className={styles.owned}>This is your cell.</span>
+        <ActionButton className={styles.challengeAction} type="button" disabled={busy} onClick={onChallenge}>Challenge</ActionButton>
       )}
       {cell.kind === "challengePending" && (
         <div className={styles.challengeDetail}>
@@ -170,20 +167,23 @@ function WorldScreen({
             selectedPosition={selected}
             onCellActivate={setSelected}
           />
+          {selected !== null && selectedCell !== null && (
+            <WorldCellPopup
+              position={selected}
+              gridWidth={snapshot.grid.width}
+              gridHeight={snapshot.grid.height}
+            >
+              <WorldDetail
+                cell={selectedCell}
+                localPlayerId={localPlayerId}
+                busy={busy}
+                onChallenge={() => run(() => world.challengeCell(selected))}
+                onJoin={(challengeId) => run(() => world.joinChallenge(challengeId))}
+                onLeave={(challengeId) => run(() => world.leaveChallenge(challengeId))}
+              />
+            </WorldCellPopup>
+          )}
         </WorldViewport>
-        {selected !== null && selectedCell !== null ? (
-          <WorldDetail
-            cell={selectedCell}
-            position={selected}
-            localPlayerId={localPlayerId}
-            busy={busy}
-            onChallenge={() => run(() => world.challengeCell(selected))}
-            onJoin={(challengeId) => run(() => world.joinChallenge(challengeId))}
-            onLeave={(challengeId) => run(() => world.leaveChallenge(challengeId))}
-          />
-        ) : (
-          <aside className={styles.worldDetail}>Select an occupied or pending-challenge cell.</aside>
-        )}
       </div>
     </section>
   );
@@ -311,11 +311,7 @@ export function NetworkGame({ onBack }: NetworkGameProps) {
 
   const ready = connection.kind === "ready" ? connection.client : null;
   return (
-    <GamePage
-      eyebrow="Server-backed World"
-      title="Grid Battle"
-      description={ready === null ? "Connecting to the shared World." : `Connected as ${ready.playerId}. Challenge a claimed cell or join a pending fight.`}
-    >
+    <GamePage header={false} wide>
       {connection.kind === "connecting" && <StatusNotice kind="progress">Connecting to the game server…</StatusNotice>}
       {connection.kind === "error" && (
         <div>

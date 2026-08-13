@@ -69,7 +69,7 @@ test("starts with defender and challenger and expires the finalized ordered rost
     position: { x: 2, y: 3 },
     defenderId: "defender",
     participantIds: ["defender", "challenger"],
-    closesAt: 11_000,
+    closesAt: 6_000,
   });
 
   assert.deepEqual(challenge.join("third"), { accepted: true });
@@ -83,7 +83,9 @@ test("starts with defender and challenger and expires the finalized ordered rost
     reason: "challengeFull",
   });
 
-  clock.advanceTo(11_000);
+  clock.advanceTo(5_999);
+  assert.equal(challenge.status, "pending");
+  clock.advanceTo(6_000);
   assert.equal(challenge.status, "expired");
   assert.equal(events.at(-1)?.kind, "expired");
   assert.deepEqual(events.at(-1)?.challenge.participantIds, [
@@ -93,7 +95,7 @@ test("starts with defender and challenger and expires the finalized ordered rost
 
 test("an action at the exact deadline loses the serialized race", () => {
   const { challenge, clock, events } = createChallenge();
-  clock.currentTime = 11_000;
+  clock.currentTime = 6_000;
 
   assert.deepEqual(challenge.join("third"), {
     accepted: false,
@@ -104,7 +106,7 @@ test("an action at the exact deadline loses the serialized race", () => {
   assert.equal(events[0]?.kind, "expired");
 
   // The now-stale timer is harmless.
-  clock.advanceTo(11_000);
+  clock.advanceTo(6_000);
   assert.equal(events.length, 1);
 });
 

@@ -154,11 +154,13 @@ export class BattleEngine {
     this.state.replaceCooldown({
       participantId: context.participantId,
       nextActionTick,
+      durationTicks,
     });
     events.push({
       kind: "cooldownStarted",
       participantId: context.participantId,
       nextActionTick,
+      durationTicks,
     });
     return { accepted: true, events };
   }
@@ -433,6 +435,7 @@ export class BattleEngine {
       const cooldown = this.state.cooldownFor(participantId);
       if (cooldown !== undefined) {
         BattleEngine.assertNonNegativeInteger(cooldown.nextActionTick, "Next action tick");
+        BattleEngine.assertNonNegativeInteger(cooldown.durationTicks, "Cooldown duration");
       }
     }
     const owners = this.occupiedParticipantIds();

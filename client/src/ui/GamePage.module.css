@@ -4,6 +4,11 @@
   padding: clamp(2rem, 5vw, 4.5rem) 0;
 }
 
+.wide {
+  width: min(96rem, calc(100% - 2rem));
+  padding-block: clamp(1rem, 2.5vw, 2rem);
+}
+
 .themeControl {
   display: flex;
   justify-content: flex-end;
@@ -43,5 +48,10 @@
   .page {
     width: min(100% - 1rem, 72rem);
     padding-top: 1.5rem;
+  }
+
+  .wide {
+    width: calc(100% - 1rem);
+    padding-top: 0.75rem;
   }
 }

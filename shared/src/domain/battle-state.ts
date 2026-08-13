@@ -62,6 +62,7 @@ export const ParticipantCooldownSchema = Type.Object(
   {
     participantId: BattleParticipantIdSchema,
     nextActionTick: TickSchema,
+    durationTicks: Type.Integer({ minimum: 0, maximum: SAFE_INTEGER_MAX }),
   },
   { additionalProperties: false },
 );

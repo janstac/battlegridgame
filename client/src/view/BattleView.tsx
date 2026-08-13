@@ -1,4 +1,5 @@
 import type { BattleParticipantId } from "@grid-game/shared";
+import type { CSSProperties } from "react";
 
 import type { ClientBattleState } from "../model/index.ts";
 import {
@@ -7,6 +8,7 @@ import {
 } from "./BattleCellView.tsx";
 import { BattleGridView } from "./BattleGridView.tsx";
 import styles from "./BattleView.module.css";
+import { cooldownProgress } from "./cooldownProgress.ts";
 import { useClientBattleState } from "./useClientBattleState.ts";
 
 export type BattleViewProps = Readonly<{
@@ -36,9 +38,9 @@ export function BattleView({
   const cooldown = snapshot.cooldowns.find(
     (entry) => entry.participantId === state.localParticipantId,
   );
-  const cooldownTicks = Math.max(
-    0,
-    (cooldown?.nextActionTick ?? 0) - state.estimatedTick,
+  const { remainingTicks: cooldownTicks, ratio: cooldownRatio } = cooldownProgress(
+    cooldown,
+    state.estimatedTick,
   );
   const localPlayerOnCooldown = cooldownTicks > 0;
   const localParticipant = snapshot.participants.find(
@@ -52,16 +54,17 @@ export function BattleView({
 
   return (
     <section className={styles.panel}>
-      <div className={styles.summary}>
-        <span>Tick <strong>{state.estimatedTick}</strong></span>
-        <span>
-          Pending splits <strong>{snapshot.pendingSplits.length}</strong>
-        </span>
-        <span>
-          Cooldown <strong>{
-            cooldownTicks === 0 ? "ready" : `${cooldownTicks} ticks`
-          }</strong>
-        </span>
+      <div
+        className={`${styles.cooldown} ${localPlayerOnCooldown ? "" : styles.cooldownReady}`}
+        role="progressbar"
+        aria-label="Action cooldown"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(cooldownRatio * 100)}
+        aria-valuetext={localPlayerOnCooldown ? `${cooldownTicks} ticks remaining` : "Ready"}
+        style={{ "--cooldown-progress": cooldownRatio } as CSSProperties}
+      >
+        <span className={styles.cooldownFill} />
       </div>
 
       <div className={styles.playerLegend}>
@@ -107,10 +110,6 @@ export function BattleView({
           void battle.increment(position);
         }}
       />
-      <p className={styles.help}>
-        Activate one of your numbered cells. A dot marks a cell with a delayed
-        split queued.
-      </p>
     </section>
   );
 }

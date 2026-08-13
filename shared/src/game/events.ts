@@ -62,6 +62,7 @@ export const CooldownStartedEventSchema = Type.Object(
     kind: Type.Literal("cooldownStarted"),
     participantId: BattleParticipantIdSchema,
     nextActionTick: TickSchema,
+    durationTicks: Type.Integer({ minimum: 0, maximum: SAFE_INTEGER_MAX }),
   },
   { additionalProperties: false },
 );

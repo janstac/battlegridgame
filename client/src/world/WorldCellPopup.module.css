@@ -1,0 +1,17 @@
+.popup {
+  position: absolute;
+  z-index: 1;
+  top: var(--world-popup-top);
+  left: var(--world-popup-left);
+  width: max-content;
+  max-width: 15rem;
+  transform-origin: center;
+}
+
+.above {
+  transform: translate(-50%, calc(-100% - 0.5rem));
+}
+
+.below {
+  transform: translate(-50%, 0.5rem);
+}

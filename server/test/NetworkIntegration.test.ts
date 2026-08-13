@@ -285,7 +285,7 @@ test("real clients observe the World while only challenge participants receive i
     (event) => event.type === "battleJoined",
     "defender battle session",
   );
-  app.challengeClock.advance(10_000);
+  app.challengeClock.advance(5_000);
   const [challengerEvent, defenderEvent] = await Promise.all([
     challengerJoin,
     defenderJoin,

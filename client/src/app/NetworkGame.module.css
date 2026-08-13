@@ -11,20 +11,22 @@
 }
 .tabs button[aria-current="page"] { color: var(--color-text-primary); border-color: var(--color-accent); background: var(--color-surface-active); }
 .tabs span { margin-left: .3rem; padding: .08rem .38rem; border-radius: var(--radius-pill); background: var(--color-surface-deep); }
-.worldLayout { display: grid; grid-template-columns: minmax(0, 1fr) 17rem; gap: 1rem; align-items: start; }
+.worldLayout { min-width: 0; }
 .worldDetail {
   display: grid;
-  gap: .8rem;
-  padding: 1rem;
+  gap: .55rem;
+  width: max-content;
+  max-width: 15rem;
+  padding: .7rem .8rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-large);
   color: var(--color-text-secondary);
   background: var(--color-surface-raised);
+  box-shadow: var(--shadow-panel);
 }
 .worldDetail > div:first-child { display: grid; gap: .22rem; }
 .worldDetail strong { color: var(--color-text-primary); }
-.coordinate { color: var(--color-text-subtle); font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }
-.owned { color: var(--color-success-text); }
+.challengeAction { justify-self: start; padding-inline: .7rem; }
 .challengeDetail { display: grid; gap: .65rem; }
 .roster { display: grid; gap: .35rem; }
 .roster span { display: flex; align-items: center; gap: .4rem; color: var(--color-text-primary); font-size: .82rem; }
@@ -32,6 +34,9 @@
 .battlesLayout { display: flex; align-items: flex-start; gap: 1rem; }
 .workspaceWrap { flex: 1; min-width: 0; }
 @media (max-width: 48rem) {
-  .worldLayout { grid-template-columns: 1fr; }
+  .battlesLayout { flex-direction: column; }
+}
+
+@media (orientation: portrait) {
   .battlesLayout { flex-direction: column; }
 }

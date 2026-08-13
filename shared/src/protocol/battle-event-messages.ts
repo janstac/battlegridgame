@@ -23,7 +23,9 @@ export function battleEventToServerMessages(
       return [{ type: "cellSplit", tick, position: { ...event.position }, cell: { kind: "empty" } }];
     case "cooldownStarted":
       return [{ type: "cooldownChanged", tick, cooldown: {
-        participantId: event.participantId, nextActionTick: event.nextActionTick,
+        participantId: event.participantId,
+        nextActionTick: event.nextActionTick,
+        durationTicks: event.durationTicks,
       } }];
     case "participantStatusChanged":
       return [{ type: "participantChanged", tick, participant: {

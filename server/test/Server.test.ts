@@ -140,7 +140,7 @@ test("expiry starts one participant-only battle and explicit leave withdraws", a
   assert.equal(pending.kind, "challengePending");
   const observerCount = observer.messages.length;
 
-  app.challengeClock.advance(10_000);
+  app.challengeClock.advance(5_000);
   await app.coordinator.requestWorldSnapshot(first.connection);
   const cell = app.world.cellAt({ x: 2, y: 0 });
   assert.deepEqual(cell, {
@@ -194,7 +194,7 @@ test("simultaneous battle disconnects cannot award a cell to a closed player", a
   await first.connection.receive({
     type: "challengeWorldCell", requestId: "challenge", position: { x: 2, y: 0 },
   });
-  app.challengeClock.advance(10_000);
+  app.challengeClock.advance(5_000);
   await app.coordinator.requestWorldSnapshot(first.connection);
   assert.equal(app.world.cellAt({ x: 2, y: 0 }).kind, "battle");
 

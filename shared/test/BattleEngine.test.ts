@@ -81,6 +81,7 @@ test("increments owned cells and emits authoritative state changes", () => {
     kind: "cooldownStarted",
     participantId: ALPHA,
     nextActionTick: 4,
+    durationTicks: 4,
   });
   assert.deepEqual(cellAt(engine.getSnapshot().grid, { x: 0, y: 0 }), occupied(ALPHA, 2));
 });
@@ -433,8 +434,8 @@ test("restore validates cooldown and split state supplied at its boundary", () =
     () => BattleEngine.restore({
       ...base,
       cooldowns: [
-        { participantId: ALPHA, nextActionTick: 1 },
-        { participantId: ALPHA, nextActionTick: 2 },
+        { participantId: ALPHA, nextActionTick: 1, durationTicks: 1 },
+        { participantId: ALPHA, nextActionTick: 2, durationTicks: 2 },
       ],
     }, NO_COOLDOWN),
     /Duplicate cooldown/,
@@ -442,7 +443,7 @@ test("restore validates cooldown and split state supplied at its boundary", () =
   assert.throws(
     () => BattleEngine.restore({
       ...base,
-      cooldowns: [{ participantId: 99, nextActionTick: 1 }],
+      cooldowns: [{ participantId: 99, nextActionTick: 1, durationTicks: 1 }],
     }, NO_COOLDOWN),
     /not a participant/,
   );
@@ -505,7 +506,7 @@ test("an overflowing direct increment preserves the complete engine state", () =
       [{ x: 2, y: 0 }, occupied(BETA, 1)],
     ]), {
       tick: 7,
-      cooldowns: [{ participantId: BETA, nextActionTick: 7 }],
+      cooldowns: [{ participantId: BETA, nextActionTick: 7, durationTicks: 0 }],
     }),
     NO_COOLDOWN,
   );
@@ -530,7 +531,7 @@ test("a split overflow rolls back its removed queue entry and emptied source", (
       [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
       [{ x: 1, y: 0 }, occupied(BETA, Number.MAX_SAFE_INTEGER)],
     ]), {
-      cooldowns: [{ participantId: ALPHA, nextActionTick: 0 }],
+      cooldowns: [{ participantId: ALPHA, nextActionTick: 0, durationTicks: 0 }],
       pendingSplits: [
         { position: { x: 0, y: 0 }, dueTick: 1, sequence: 8 },
       ],
@@ -639,9 +640,9 @@ test("cooldown serialization follows participant order", () => {
         { participantId: 2, status: "active" },
       ],
       cooldowns: [
-        { participantId: 2, nextActionTick: 3 },
-        { participantId: 4, nextActionTick: 1 },
-        { participantId: 9, nextActionTick: 2 },
+        { participantId: 2, nextActionTick: 3, durationTicks: 3 },
+        { participantId: 4, nextActionTick: 1, durationTicks: 1 },
+        { participantId: 9, nextActionTick: 2, durationTicks: 2 },
       ],
     },
     NO_COOLDOWN,

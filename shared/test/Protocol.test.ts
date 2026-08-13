@@ -56,6 +56,16 @@ test("engine events map to ordered server facts including victory cleanup", () =
     type: "cellIncremented", tick: 3, position: { x: 1, y: 2 },
     cell: { kind: "occupied", participantId: ALPHA, count: 2 }, source: "command",
   }]);
+  assert.deepEqual(battleEventToServerMessages({
+    kind: "cooldownStarted",
+    participantId: ALPHA,
+    nextActionTick: 14,
+    durationTicks: 4,
+  }, 10), [{
+    type: "cooldownChanged",
+    tick: 10,
+    cooldown: { participantId: ALPHA, nextActionTick: 14, durationTicks: 4 },
+  }]);
 });
 
 test("server protocol validates individual authoritative facts", () => {
@@ -73,6 +83,11 @@ test("server protocol validates individual authoritative facts", () => {
       split: { position: { x: 0, y: 0 }, dueTick: 10, sequence: 0 },
     },
     {
+      type: "cooldownChanged",
+      tick: 2,
+      cooldown: { participantId: ALPHA, nextActionTick: 6, durationTicks: 4 },
+    },
+    {
       type: "commandRejected",
       requestId: "request-2",
       reason: "notOwner",
@@ -88,6 +103,11 @@ test("server protocol validates individual authoritative facts", () => {
     position: { x: 0, y: 0 },
     cell: { kind: "occupied", participantId: ALPHA, count: 0 },
     source: "command",
+  }));
+  assert.throws(() => parseServerMessage({
+    type: "cooldownChanged",
+    tick: 2,
+    cooldown: { participantId: ALPHA, nextActionTick: 6 },
   }));
 });
 

@@ -1,8 +1,8 @@
 .grid {
   display: block;
   width: 100%;
-  max-width: min(44rem, 100%);
-  max-height: min(70vh, 42rem);
+  max-width: min(52rem, 100%);
+  max-height: none;
   margin: 0 auto;
   filter: drop-shadow(var(--shadow-grid));
 }

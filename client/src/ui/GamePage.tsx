@@ -3,31 +3,45 @@ import type { ReactNode } from "react";
 import { ThemeControl } from "../theme/index.ts";
 import styles from "./GamePage.module.css";
 
-export type GamePageProps = Readonly<{
-  eyebrow: string;
-  title: string;
-  description: ReactNode;
+type GamePageSharedProps = {
   children: ReactNode;
-}>;
+  wide?: boolean;
+};
+
+type GamePageHeaderProps =
+  | {
+      header?: true;
+      eyebrow: string;
+      title: string;
+      description: ReactNode;
+    }
+  | {
+      header: false;
+      eyebrow?: never;
+      title?: never;
+      description?: never;
+    };
+
+export type GamePageProps = Readonly<GamePageSharedProps & GamePageHeaderProps>;
 
 /** Shared page frame for each game mode. */
-export function GamePage({
-  eyebrow,
-  title,
-  description,
-  children,
-}: GamePageProps) {
+export function GamePage(props: GamePageProps) {
+  const pageClassName = [styles.page, props.wide ? styles.wide : undefined]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <main className={styles.page}>
+    <main className={pageClassName}>
       <div className={styles.themeControl}>
         <ThemeControl />
       </div>
-      <header className={styles.header}>
-        <p className={styles.eyebrow}>{eyebrow}</p>
-        <h1>{title}</h1>
-        <p className={styles.description}>{description}</p>
-      </header>
-      {children}
+      {props.header !== false && (
+        <header className={styles.header}>
+          <p className={styles.eyebrow}>{props.eyebrow}</p>
+          <h1>{props.title}</h1>
+          <p className={styles.description}>{props.description}</p>
+        </header>
+      )}
+      {props.children}
     </main>
   );
 }
