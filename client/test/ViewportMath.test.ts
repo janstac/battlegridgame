@@ -9,6 +9,7 @@ import {
   clampScale,
   clampTransform,
   distance,
+  exceedsDragThreshold,
   panTransform,
   zoomTransform,
 } from "../src/world/viewportMath.ts";
@@ -40,6 +41,13 @@ test("anchored zoom preserves the content point beneath the anchor", () => {
 test("pinch helpers calculate centroid and distance", () => {
   assert.deepEqual(centroid({ x: 10, y: 20 }, { x: 30, y: 60 }), { x: 20, y: 40 });
   assert.equal(distance({ x: 0, y: 0 }, { x: 3, y: 4 }), 5);
+});
+
+test("drag threshold uses displacement from the pointer start", () => {
+  const start = { x: 10, y: 10 };
+  assert.equal(exceedsDragThreshold(start, { x: 15, y: 10 }, 6), false);
+  assert.equal(exceedsDragThreshold(start, { x: 16, y: 10 }, 6), true);
+  assert.equal(exceedsDragThreshold(start, { x: 10, y: 10 }, 6), false);
 });
 
 test("battle ordering is pure and bounded", () => {

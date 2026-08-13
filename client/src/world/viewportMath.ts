@@ -66,6 +66,14 @@ export function distance(first: ViewportPoint, second: ViewportPoint): number {
   return Math.hypot(second.x - first.x, second.y - first.y);
 }
 
+export function exceedsDragThreshold(
+  start: ViewportPoint,
+  current: ViewportPoint,
+  threshold: number,
+): boolean {
+  return distance(start, current) >= threshold;
+}
+
 export function centroid(first: ViewportPoint, second: ViewportPoint): ViewportPoint {
   return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
 }
