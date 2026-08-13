@@ -66,8 +66,7 @@
   background: var(--player-color);
 }
 
-.winner,
-.rejection {
+.winner {
   margin: 0 0 1rem;
   padding: 0.75rem 0.9rem;
   border-radius: var(--radius-medium);
@@ -76,11 +75,6 @@
 .winner {
   color: var(--color-success-text);
   background: var(--color-success-background);
-}
-
-.rejection {
-  color: var(--color-error-text);
-  background: var(--color-error-background);
 }
 
 @media (max-width: 36rem) {

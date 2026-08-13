@@ -28,3 +28,30 @@ test("ready and zero-duration cooldowns have no fill", () => {
     ratio: 0,
   });
 });
+
+test("cooldown progress never exposes an invalid CSS ratio", () => {
+  assert.deepEqual(cooldownProgress({
+    participantId: 0,
+    nextActionTick: 25,
+    durationTicks: Number.NaN,
+  }, 20), {
+    remainingTicks: 5,
+    ratio: 0,
+  });
+  assert.deepEqual(cooldownProgress({
+    participantId: 0,
+    nextActionTick: 25,
+    durationTicks: 5,
+  }, Number.NaN), {
+    remainingTicks: 0,
+    ratio: 0,
+  });
+  assert.deepEqual(cooldownProgress({
+    participantId: 0,
+    nextActionTick: Number.NaN,
+    durationTicks: 5,
+  }, 20), {
+    remainingTicks: 0,
+    ratio: 0,
+  });
+});

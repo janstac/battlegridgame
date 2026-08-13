@@ -17,16 +17,6 @@ export type BattleViewProps = Readonly<{
   participantLabels?: ReadonlyMap<BattleParticipantId, string>;
 }>;
 
-const REJECTION_LABELS = {
-  battleFinished: "The battle is already finished.",
-  unknownParticipant: "That participant is not part of this battle.",
-  participantInactive: "You are no longer active in this battle.",
-  outOfBounds: "That cell is outside the battle grid.",
-  notOccupied: "Choose a cell that already belongs to the active player.",
-  notOwner: "That cell belongs to another player.",
-  cooldownActive: "That player is still cooling down.",
-} as const;
-
 /** Renders directly from the client-owned authoritative state projection. */
 export function BattleView({
   battle,
@@ -46,7 +36,8 @@ export function BattleView({
   const localParticipant = snapshot.participants.find(
     ({ participantId }) => participantId === state.localParticipantId,
   );
-  const localInteractionDisabled = localPlayerOnCooldown
+  const localInteractionDisabled = state.localCommandPending
+    || localPlayerOnCooldown
     || localParticipant?.status !== "active";
   const winner = snapshot.status.kind === "finished"
     ? snapshot.status.winnerId
@@ -95,12 +86,6 @@ export function BattleView({
             : `${participantLabels?.get(winner) ?? `Player ${winner + 1}`} wins the battle.`}
         </p>
       )}
-      {state.lastRejection !== null && (
-        <p className={styles.rejection} role="alert">
-          {REJECTION_LABELS[state.lastRejection.reason]}
-        </p>
-      )}
-
       <BattleGridView
         snapshot={snapshot}
         localParticipantId={state.localParticipantId}

@@ -21,6 +21,7 @@ export type ClientBattleViewState = Readonly<{
   battle: BattleSnapshot;
   localParticipantId: BattleParticipantId;
   estimatedTick: number;
+  localCommandPending: boolean;
   lastRejection: BattleCommandRejection | null;
 }>;
 
@@ -72,6 +73,7 @@ export class ClientBattleState {
   private readonly probeIntervalMs: number;
   private viewState: ClientBattleViewState;
   private rejection: BattleCommandRejection | null = null;
+  private readonly pendingIncrementRequests = new Set<RequestId>();
   private anchorTick: number;
   private anchorTime: number;
   private lastEstimatedTick: number;
@@ -134,13 +136,23 @@ export class ClientBattleState {
 
   async increment(position: Position): Promise<RequestId> {
     this.assertUsable();
+    const pendingRequestId = this.pendingIncrementRequests.values().next().value;
+    if (pendingRequestId !== undefined) return pendingRequestId;
     const requestId = this.requestIdFactory();
-    this.clearRejection();
-    await this.connection.send({
-      type: "incrementCell",
-      requestId,
-      position: { ...position },
-    });
+    this.rejection = null;
+    this.pendingIncrementRequests.add(requestId);
+    this.publish();
+    try {
+      await this.connection.send({
+        type: "incrementCell",
+        requestId,
+        position: { ...position },
+      });
+    } catch (error) {
+      this.pendingIncrementRequests.delete(requestId);
+      this.publish();
+      throw error;
+    }
     return requestId;
   }
 
@@ -162,6 +174,7 @@ export class ClientBattleState {
   private receive(message: ServerMessage): void {
     if (this.disposed) return;
     if (message.type === "commandRejected") {
+      this.pendingIncrementRequests.delete(message.requestId);
       this.rejection = {
         requestId: message.requestId,
         reason: message.reason,
@@ -184,8 +197,17 @@ export class ClientBattleState {
 
     this.battle = applyBattleServerMessage(this.battle, message);
     if (message.type === "battleSnapshot") {
+      this.pendingIncrementRequests.clear();
       this.rejection = null;
       this.lastEstimatedTick = this.battle.tick;
+    } else if (
+      message.type === "cooldownChanged"
+      && message.cooldown.participantId === this.participantId
+    ) {
+      const pendingRequestId = this.pendingIncrementRequests.values().next().value;
+      if (pendingRequestId !== undefined) {
+        this.pendingIncrementRequests.delete(pendingRequestId);
+      }
     }
     this.setTickAnchor(this.battle.tick, this.clock.now());
     this.publish();
@@ -204,7 +226,9 @@ export class ClientBattleState {
   private setTickAnchor(tick: number, time: number): void {
     this.anchorTick = tick;
     this.anchorTime = time;
-    this.lastEstimatedTick = Math.max(this.lastEstimatedTick, tick);
+    // Authoritative facts may correct a client clock that ran ahead of the
+    // simulation. Keeping the old estimate would expose actions too early.
+    this.lastEstimatedTick = tick;
   }
 
   private estimateTick(): number {
@@ -222,6 +246,7 @@ export class ClientBattleState {
       battle: this.battle.toSnapshot(),
       localParticipantId: this.participantId,
       estimatedTick: this.estimateTick(),
+      localCommandPending: this.pendingIncrementRequests.size > 0,
       lastRejection: this.rejection,
     };
   }

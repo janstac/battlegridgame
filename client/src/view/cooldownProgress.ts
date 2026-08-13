@@ -10,12 +10,21 @@ export function cooldownProgress(
   cooldown: ParticipantCooldown | undefined,
   estimatedTick: number,
 ): CooldownProgress {
-  const remainingTicks = Math.max(0, (cooldown?.nextActionTick ?? 0) - estimatedTick);
-  if (cooldown === undefined || cooldown.durationTicks === 0) {
+  if (cooldown === undefined) return { remainingTicks: 0, ratio: 0 };
+
+  const remainingTicks = Number.isFinite(estimatedTick)
+    && Number.isFinite(cooldown.nextActionTick)
+    ? Math.max(0, cooldown.nextActionTick - estimatedTick)
+    : 0;
+  if (
+    remainingTicks === 0
+    || !Number.isFinite(cooldown.durationTicks)
+    || cooldown.durationTicks <= 0
+  ) {
     return { remainingTicks, ratio: 0 };
   }
   return {
     remainingTicks,
-    ratio: Math.min(1, remainingTicks / cooldown.durationTicks),
+    ratio: Math.max(0, Math.min(1, remainingTicks / cooldown.durationTicks)),
   };
 }
