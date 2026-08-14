@@ -6,6 +6,7 @@
   fill: var(--color-battle-cell);
   stroke: var(--color-border);
   stroke-width: 0.035;
+  outline: none;
   transition: filter 120ms ease, stroke-width 120ms ease;
 }
 
@@ -29,9 +30,11 @@
   cursor: pointer;
 }
 
-.interactive:hover .surface,
-.surface:focus-visible {
+.interactive:hover .surface {
   filter: brightness(1.18);
+}
+
+.surface:focus-visible {
   stroke: var(--color-focus);
   stroke-width: 0.065;
 }
