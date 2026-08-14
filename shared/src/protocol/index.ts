@@ -1,4 +1,6 @@
 export * from "./apply-battle-server-message.ts";
+export * from "./admin-messages.ts";
+export * from "./admin-validators.ts";
 export * from "./battle-event-messages.ts";
 export * from "./client-messages.ts";
 export * from "./network-messages.ts";
