@@ -6,13 +6,17 @@
     "node": ">=24"
   },
   "workspaces": [
+    "bot",
     "client",
     "server",
     "shared"
   ],
   "scripts": {
     "typecheck": "tsc",
-    "test": "node --test shared/test/*.test.ts client/test/*.test.ts server/test/*.test.ts",
+    "test": "node --test shared/test/*.test.ts client/test/*.test.ts server/test/*.test.ts bot/test/*.test.ts",
+    "test:bot": "npm test --workspace @grid-game/bot",
+    "build:bot": "npm run build --workspace @grid-game/bot",
+    "start:bot": "npm run start --workspace @grid-game/bot --",
     "dev:client": "npm run dev --workspace @grid-game/client",
     "dev:server": "npm run start --workspace @grid-game/server",
     "build:client": "npm run build --workspace @grid-game/client"

@@ -1,0 +1,15 @@
+{
+  "name": "@grid-game/bot",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "start": "node src/cli.ts",
+    "test": "node --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@grid-game/client": "*",
+    "@grid-game/shared": "*"
+  }
+}

@@ -15,6 +15,7 @@
     "types": ["node"]
   },
   "include": [
+    "bot/**/*.ts",
     "shared/**/*.ts",
     "server/**/*.ts",
     "client/**/*.ts",
