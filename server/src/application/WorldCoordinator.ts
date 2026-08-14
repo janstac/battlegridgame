@@ -146,7 +146,7 @@ export class WorldCoordinator {
       const battle = this.factory.create(playerIds);
       const battleId = this.registerBattle(battle);
       for (const participant of participants as ClientConnection[]) {
-        participant.attachBattle(battleId, battle, null);
+        participant.attachBattle(battleId, battle);
       }
       battle.start();
       return { ok: true, battle: this.adminBattle(battleId, battle) };

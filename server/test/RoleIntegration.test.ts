@@ -130,10 +130,9 @@ test("sockets remain anonymous until they select exactly one role", async (t) =>
 
   admin.send({ type: "adminListPlayers", requestId: "players" });
   assert.deepEqual(parseAdminConnectionServerMessage(await admin.next()), {
-    type: "adminError",
+    type: "adminPlayers",
     requestId: "players",
-    code: "internal",
-    message: "Admin service unavailable",
+    playerIds: ["player-1"],
   });
 
   const adminClosed = admin.closeResult();

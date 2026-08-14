@@ -1,4 +1,5 @@
 import { createServer, type Server as HttpServer } from "node:http";
+import { AdminService } from "./admin/AdminService.ts";
 import { WorldCoordinator } from "./application/WorldCoordinator.ts";
 import { PlayerDirectory } from "./application/PlayerDirectory.ts";
 import { BattleRegistry } from "./game/BattleRegistry.ts";
@@ -52,11 +53,16 @@ export function createGridGameServer(options: GridGameServerOptions = {}): GridG
       ...(options.challengeDurationMs === undefined ? {} : { challengeDurationMs: options.challengeDurationMs }),
     },
   );
+  const admin = new AdminService(coordinator);
+  const adminMessageHandler: AdminMessageHandler = options.adminMessageHandler
+    ?? (async (message, output) => {
+      output(await admin.dispatch(message));
+    });
   const gateway = new BattleWebSocketGateway(
     httpServer,
     players,
     coordinator,
-    options.adminMessageHandler,
+    adminMessageHandler,
   );
   return {
     httpServer,
