@@ -52,9 +52,9 @@
 
 .localCount {
   paint-order: stroke fill;
-  stroke: var(--color-surface-raised);
+  stroke: var(--color-local-count-outline);
   stroke-linejoin: round;
-  stroke-width: 0.045px;
+  stroke-width: 0.09px;
 }
 
 .countChanged {
