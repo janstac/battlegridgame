@@ -32,4 +32,3 @@
   cursor: pointer;
 }
 .controls output { min-width: 3.3rem; color: var(--color-text-secondary); text-align: center; font-size: .75rem; }
-.hint { margin: .6rem 0 0; color: var(--color-text-muted); font-size: .78rem; }

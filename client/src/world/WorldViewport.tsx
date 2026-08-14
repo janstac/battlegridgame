@@ -1,5 +1,5 @@
-import type { PointerEvent as ReactPointerEvent, ReactNode, WheelEvent } from "react";
-import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
   centroid,
@@ -14,6 +14,7 @@ import {
   type ViewportTransform,
 } from "./viewportMath.ts";
 import styles from "./WorldViewport.module.css";
+import { addWorldWheelListener, worldWheelTransform } from "./worldViewportInput.ts";
 
 export const WORLD_CONTENT_SIZE = { width: 640, height: 640 } as const;
 const DRAG_THRESHOLD = 6;
@@ -53,6 +54,25 @@ export function WorldViewport({ children }: WorldViewportProps) {
     const observer = new ResizeObserver(update);
     observer.observe(host);
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (host === null) return;
+    return addWorldWheelListener(host, (event) => {
+      const bounds = host.getBoundingClientRect();
+      if (bounds.width <= 0 || bounds.height <= 0) return;
+      setCamera((current) => current === null ? current : ({
+        ...current,
+        transform: worldWheelTransform(
+          current.transform,
+          event,
+          bounds,
+          current.size,
+          WORLD_CONTENT_SIZE,
+        ),
+      }));
+    });
   }, []);
 
   const pointerPoint = (event: ReactPointerEvent): ViewportPoint => {
@@ -144,31 +164,6 @@ export function WorldViewport({ children }: WorldViewportProps) {
     ),
   }));
 
-  const onWheel = (event: WheelEvent<HTMLDivElement>) => {
-    if (!event.ctrlKey && !event.metaKey) return;
-    event.preventDefault();
-    const bounds = event.currentTarget.getBoundingClientRect();
-    setCamera((current) => {
-      if (current === null) return current;
-      const deltaScale = event.deltaMode === 1
-        ? 16
-        : event.deltaMode === 2
-          ? Math.max(1, current.size.height)
-          : 1;
-      const deltaY = event.deltaY * deltaScale;
-      return {
-        ...current,
-        transform: zoomTransform(
-          current.transform,
-          current.transform.scale * Math.exp(-deltaY * 0.0015),
-          { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
-          current.size,
-          WORLD_CONTENT_SIZE,
-        ),
-      };
-    });
-  };
-
   const projection = useMemo<WorldViewportProjection | null>(() => camera === null ? null : ({
     transform: camera.transform,
     viewportSize: camera.size,
@@ -186,7 +181,6 @@ export function WorldViewport({ children }: WorldViewportProps) {
         <div
           ref={hostRef}
           className={styles.viewport}
-          onWheel={onWheel}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={finishPointer}
@@ -202,7 +196,6 @@ export function WorldViewport({ children }: WorldViewportProps) {
         >
           {projection === null ? null : children}
         </div>
-        <p className={styles.hint}>Drag to pan. Pinch or Ctrl/⌘ + scroll to zoom.</p>
       </section>
     </WorldViewportContext.Provider>
   );
