@@ -7,6 +7,7 @@ import type {
   PlayerId,
   Position,
   RequestId,
+  WorldCell,
   WorldCommandRejectionReason,
   WorldDelta,
   WorldSnapshot,
@@ -101,7 +102,9 @@ export class WorldCoordinator {
   connectedPlayerIds(): readonly PlayerId[] { return this.players.playerIds(); }
 
   async adminListPlayers(): Promise<readonly PlayerId[]> {
-    return await this.enqueue(() => [...this.players.playerIds()].sort());
+    return await this.enqueue(() => this.players.playerIds()
+      .filter((playerId) => !this.players.get(playerId)?.isClosed)
+      .sort());
   }
 
   async adminGetWorld(): Promise<WorldSnapshot> {
@@ -151,13 +154,141 @@ export class WorldCoordinator {
   }
 
   async adminReplaceWorldCells(
-    _changes: readonly AdminWorldCellReplacement[],
+    changes: readonly AdminWorldCellReplacement[],
   ): Promise<AdminWorldReplacementResult> {
-    return {
-      ok: false,
-      code: "internal",
-      message: "World replacement is not available",
-    };
+    return await this.enqueue(async () => {
+      if (changes.length < 1 || changes.length > 256) {
+        return adminFailure(
+          "invalidRequest",
+          "World replacement must contain 1 to 256 cells",
+        );
+      }
+
+      const seenPositions = new Set<string>();
+      const inspected: Array<Readonly<{
+        change: AdminWorldCellReplacement;
+        actual: WorldCell;
+      }>> = [];
+      for (const change of changes) {
+        const key = `${change.position.x},${change.position.y}`;
+        if (seenPositions.has(key)) {
+          return adminFailure(
+            "invalidRequest",
+            `World replacement repeats position (${key})`,
+          );
+        }
+        seenPositions.add(key);
+
+        let actual: WorldCell;
+        try {
+          actual = this.world.cellAt(change.position);
+        } catch {
+          return adminFailure(
+            "invalidRequest",
+            `World position (${key}) is outside the grid`,
+          );
+        }
+        if (!worldCellsEqual(actual, change.expected)) {
+          return adminFailure(
+            "conflict",
+            `World position (${key}) no longer matches the expected cell`,
+          );
+        }
+        if (change.next.kind === "occupied") {
+          const owner = this.players.get(change.next.playerId);
+          if (owner === undefined || owner.isClosed) {
+            return adminFailure(
+              "unknownPlayer",
+              `World cell owner ${change.next.playerId} is not connected`,
+            );
+          }
+        }
+        inspected.push({ change, actual });
+      }
+
+      const pendingChallenges = new Map<ChallengeId, PendingRuntime>();
+      const hostedBattles = new Map<BattleId, HostedBattle>();
+      for (const { change, actual } of inspected) {
+        switch (actual.kind) {
+          case "unoccupied":
+          case "occupied":
+            break;
+          case "challengePending": {
+            const runtime = this.challenges.get(actual.challengeId);
+            if (
+              runtime === undefined
+              || !positionsEqual(runtime.challenge.position, change.position)
+              || !positionsEqual(
+                this.world.positionForChallenge(actual.challengeId),
+                change.position,
+              )
+              || !worldCellsEqual(runtime.challenge.worldCell(), actual)
+            ) {
+              return adminFailure(
+                "lifecycleNotFound",
+                `Challenge ${actual.challengeId} does not match the targeted world cell`,
+              );
+            }
+            pendingChallenges.set(actual.challengeId, runtime);
+            break;
+          }
+          case "battle": {
+            const battle = this.battles.get(actual.battleId);
+            const rosterPlayerIds = battle?.getRoster().map(({ playerId }) => playerId);
+            if (
+              battle === undefined
+              || !positionsEqual(battle.worldPosition, change.position)
+              || !positionsEqual(
+                this.world.positionForBattle(actual.battleId),
+                change.position,
+              )
+              || !stringArraysEqual(rosterPlayerIds, actual.playerIds)
+            ) {
+              return adminFailure(
+                "lifecycleNotFound",
+                `Battle ${actual.battleId} does not match the targeted world cell`,
+              );
+            }
+            hostedBattles.set(actual.battleId, battle);
+            break;
+          }
+        }
+      }
+
+      for (const [challengeId, runtime] of pendingChallenges) {
+        this.challenges.delete(challengeId);
+        this.closedChallenges.add(challengeId);
+        runtime.unsubscribe();
+        runtime.challenge.dispose();
+      }
+      for (const [battleId, battle] of hostedBattles) {
+        this.terminalUnsubscribers.get(battleId)?.();
+        this.terminalUnsubscribers.delete(battleId);
+        if (this.battles.get(battleId) !== battle) {
+          throw new Error(`Preflighted battle ${battleId} changed during cancellation`);
+        }
+        const removed = await this.battles.remove(battleId);
+        if (!removed) {
+          throw new Error(`Preflighted battle ${battleId} could not be cancelled`);
+        }
+      }
+
+      const delta = this.world.replaceCells(inspected.map(({ change }) => ({
+        position: change.position,
+        expected: change.expected,
+        cell: change.next,
+      })));
+      if (delta === null) {
+        throw new Error("Validated world replacement unexpectedly produced no delta");
+      }
+
+      for (const [battleId, battle] of hostedBattles) {
+        for (const { playerId } of battle.getRoster()) {
+          this.players.get(playerId)?.detachBattle(battleId, true);
+        }
+      }
+      return { ok: true, delta };
+    });
   }
 
   /** Allocates initial cells, sends a converged snapshot, then subscribes. */
@@ -459,5 +590,49 @@ export class WorldCoordinator {
     const next = this.operations.then(operation);
     this.operations = next.then(() => undefined, () => undefined);
     return await next;
+  }
+}
+
+function adminFailure(
+  code: AdminErrorCode,
+  message: string,
+): AdminOperationFailure {
+  return { ok: false, code, message };
+}
+
+function positionsEqual(
+  left: Position | undefined | null,
+  right: Position | undefined | null,
+): boolean {
+  if (left == null || right == null) return left === right;
+  return left.x === right.x && left.y === right.y;
+}
+
+function stringArraysEqual(
+  left: readonly string[] | undefined,
+  right: readonly string[],
+): boolean {
+  return left !== undefined
+    && left.length === right.length
+    && left.every((value, index) => value === right[index]);
+}
+
+function worldCellsEqual(left: WorldCell, right: WorldCell): boolean {
+  if (left.kind !== right.kind) return false;
+  switch (left.kind) {
+    case "unoccupied":
+      return true;
+    case "occupied":
+      return right.kind === "occupied" && left.playerId === right.playerId;
+    case "challengePending":
+      return right.kind === "challengePending"
+        && left.challengeId === right.challengeId
+        && left.defenderId === right.defenderId
+        && left.closesAt === right.closesAt
+        && stringArraysEqual(left.participantIds, right.participantIds);
+    case "battle":
+      return right.kind === "battle"
+        && left.battleId === right.battleId
+        && stringArraysEqual(left.playerIds, right.playerIds);
   }
 }
