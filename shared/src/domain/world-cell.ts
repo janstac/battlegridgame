@@ -5,6 +5,7 @@ import {
   ChallengeIdSchema,
   PlayerIdSchema,
   UnixTimestampMsSchema,
+  WaitingIdSchema,
 } from "./ids.ts";
 
 /** A World position that is available for initial allocation. */
@@ -45,6 +46,25 @@ export type ChallengePendingWorldCell = Type.Static<
   typeof ChallengePendingWorldCellSchema
 >;
 
+/** Public facts for a challenge waiting for participant battle capacity. */
+export const ChallengeWaitingWorldCellSchema = Type.Object(
+  {
+    kind: Type.Literal("challengeWaiting"),
+    challengeId: ChallengeIdSchema,
+    waitingId: WaitingIdSchema,
+    defenderId: PlayerIdSchema,
+    participantIds: Type.Array(PlayerIdSchema, {
+      minItems: 2,
+      maxItems: 4,
+      uniqueItems: true,
+    }),
+  },
+  { additionalProperties: false },
+);
+export type ChallengeWaitingWorldCell = Type.Static<
+  typeof ChallengeWaitingWorldCellSchema
+>;
+
 /** Public World metadata for a battle currently occupying the position. */
 export const BattleWorldCellSchema = Type.Object(
   {
@@ -65,6 +85,7 @@ export const WorldCellSchema = Type.Union([
   UnoccupiedWorldCellSchema,
   OccupiedWorldCellSchema,
   ChallengePendingWorldCellSchema,
+  ChallengeWaitingWorldCellSchema,
   BattleWorldCellSchema,
 ]);
 export type WorldCell = Type.Static<typeof WorldCellSchema>;
@@ -83,6 +104,14 @@ export function copyWorldCell(cell: WorldCell): WorldCell {
         defenderId: cell.defenderId,
         participantIds: [...cell.participantIds],
         closesAt: cell.closesAt,
+      };
+    case "challengeWaiting":
+      return {
+        kind: "challengeWaiting",
+        challengeId: cell.challengeId,
+        waitingId: cell.waitingId,
+        defenderId: cell.defenderId,
+        participantIds: [...cell.participantIds],
       };
     case "battle":
       return {

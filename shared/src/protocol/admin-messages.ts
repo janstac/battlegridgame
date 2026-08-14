@@ -184,6 +184,7 @@ export const AdminErrorCodeSchema = Type.Union([
   Type.Literal("conflict"),
   Type.Literal("lifecycleNotFound"),
   Type.Literal("lifecycleCancellationFailed"),
+  Type.Literal("battleLimitReached"),
   Type.Literal("internal"),
 ]);
 

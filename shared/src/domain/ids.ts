@@ -27,6 +27,14 @@ export const ChallengeIdSchema = Type.String({ minLength: 1 });
 /** Identifies one pending World challenge lifetime. */
 export type ChallengeId = Type.Static<typeof ChallengeIdSchema>;
 
+/** Runtime schema for a process-monotonic Waiting challenge identifier. */
+export const WaitingIdSchema = Type.Integer({
+  minimum: 1,
+  maximum: SAFE_ID_MAX,
+});
+/** Orders Waiting challenge lifetimes without exposing scheduler internals. */
+export type WaitingId = Type.Static<typeof WaitingIdSchema>;
+
 /** Runtime schema for a client-generated request identifier. */
 export const RequestIdSchema = Type.String({ minLength: 1 });
 /** Correlates a client command with its server response. */

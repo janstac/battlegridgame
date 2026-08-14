@@ -20,7 +20,7 @@ function makeWorldSnapshot(): WorldSnapshot {
     revision: 3,
     grid: {
       width: 2,
-      height: 2,
+      height: 3,
       cells: [
         { kind: "occupied", playerId: alpha },
         { kind: "unoccupied" },
@@ -36,6 +36,14 @@ function makeWorldSnapshot(): WorldSnapshot {
           battleId: "battle-1",
           playerIds: [alpha, beta],
         },
+        {
+          kind: "challengeWaiting",
+          challengeId: "challenge-2",
+          waitingId: 7,
+          defenderId: alpha,
+          participantIds: [alpha, beta],
+        },
+        { kind: "unoccupied" },
       ],
     },
   };
@@ -137,6 +145,11 @@ test("admin requests are strict, correlated, and role-specific", () => {
           position: { x: 1, y: 1 },
           expected: snapshot.grid.cells[3],
           next: { kind: "unoccupied" },
+        },
+        {
+          position: { x: 0, y: 2 },
+          expected: snapshot.grid.cells[4],
+          next: { kind: "occupied", playerId: alpha },
         },
       ],
     },
@@ -253,7 +266,11 @@ test("admin world replacements require a bounded unique-coordinate batch", () =>
 test("admin world replacements accept full lifecycle expectations only", () => {
   const snapshot = makeWorldSnapshot();
 
-  for (const expected of [snapshot.grid.cells[2], snapshot.grid.cells[3]]) {
+  for (const expected of [
+    snapshot.grid.cells[2],
+    snapshot.grid.cells[3],
+    snapshot.grid.cells[4],
+  ]) {
     assert.doesNotThrow(() =>
       parseAdminNetworkClientMessage({
         type: "adminReplaceWorldCells",
@@ -283,7 +300,29 @@ test("admin world replacements accept full lifecycle expectations only", () => {
     }),
   );
 
-  for (const next of [snapshot.grid.cells[2], snapshot.grid.cells[3]]) {
+  assert.throws(() =>
+    parseAdminNetworkClientMessage({
+      type: "adminReplaceWorldCells",
+      requestId: "partial-waiting-expected",
+      changes: [
+        {
+          position: { x: 0, y: 2 },
+          expected: {
+            kind: "challengeWaiting",
+            challengeId: "challenge-2",
+            waitingId: 7,
+          },
+          next: { kind: "unoccupied" },
+        },
+      ],
+    }),
+  );
+
+  for (const next of [
+    snapshot.grid.cells[2],
+    snapshot.grid.cells[3],
+    snapshot.grid.cells[4],
+  ]) {
     assert.throws(() =>
       parseAdminNetworkClientMessage({
         type: "adminReplaceWorldCells",
@@ -356,6 +395,7 @@ test("admin response schemas reject local-player fields and unstable errors", ()
     "conflict",
     "lifecycleNotFound",
     "lifecycleCancellationFailed",
+    "battleLimitReached",
     "internal",
   ]) {
     assert.doesNotThrow(() =>

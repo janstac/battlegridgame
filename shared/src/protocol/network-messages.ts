@@ -121,6 +121,7 @@ export const WorldCommandRejectionReasonSchema = Type.Union([
   Type.Literal("alreadyJoined"),
   Type.Literal("challengeFull"),
   Type.Literal("notParticipant"),
+  Type.Literal("battleLimitReached"),
 ]);
 export type WorldCommandRejectionReason = Type.Static<
   typeof WorldCommandRejectionReasonSchema

@@ -21,7 +21,7 @@ function makeWorldSnapshot(): WorldSnapshot {
     revision: 3,
     grid: {
       width: 2,
-      height: 2,
+      height: 3,
       cells: [
         { kind: "occupied", playerId: alpha },
         { kind: "unoccupied" },
@@ -37,6 +37,14 @@ function makeWorldSnapshot(): WorldSnapshot {
           battleId: "battle-1",
           playerIds: [alpha, beta],
         },
+        {
+          kind: "challengeWaiting",
+          challengeId: "challenge-2",
+          waitingId: 7,
+          defenderId: alpha,
+          participantIds: [alpha, beta],
+        },
+        { kind: "unoccupied" },
       ],
     },
   };
@@ -67,6 +75,7 @@ function makeBattleSnapshot() {
 test("World schemas validate every cell state and bounded unique rosters", () => {
   const snapshot = makeWorldSnapshot();
   assert.deepEqual(parseWorldSnapshot(snapshot), snapshot);
+  assert.deepEqual(parseWorldCell(snapshot.grid.cells[4]), snapshot.grid.cells[4]);
 
   assert.throws(() => parseWorldCell({
     kind: "challengePending",
@@ -87,6 +96,43 @@ test("World schemas validate every cell state and bounded unique rosters", () =>
   }));
 });
 
+test("Waiting challenge cells require an exact shape and a positive safe integer ID", () => {
+  const waiting = {
+    kind: "challengeWaiting",
+    challengeId: "challenge-2",
+    waitingId: 7,
+    defenderId: alpha,
+    participantIds: [alpha, beta],
+  };
+  assert.deepEqual(parseWorldCell(waiting), waiting);
+
+  for (const waitingId of [
+    0,
+    -1,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
+    assert.throws(() => parseWorldCell({ ...waiting, waitingId }));
+  }
+  for (const key of [
+    "challengeId",
+    "waitingId",
+    "defenderId",
+    "participantIds",
+  ] as const) {
+    const incomplete: Record<string, unknown> = { ...waiting };
+    delete incomplete[key];
+    assert.throws(() => parseWorldCell(incomplete));
+  }
+  assert.throws(() => parseWorldCell({ ...waiting, closesAt: 10_000 }));
+  assert.throws(() => parseWorldCell({
+    ...waiting,
+    participantIds: [alpha, alpha],
+  }));
+});
+
 test("World deltas apply immutably and converge on the declared revision", () => {
   const snapshot = makeWorldSnapshot();
   const delta = parseWorldDelta({
@@ -97,6 +143,16 @@ test("World deltas apply immutably and converge on the declared revision", () =>
       {
         position: { x: 1, y: 0 },
         cell: { kind: "occupied", playerId: beta },
+      },
+      {
+        position: { x: 0, y: 2 },
+        cell: {
+          kind: "challengeWaiting",
+          challengeId: "challenge-3",
+          waitingId: 8,
+          defenderId: beta,
+          participantIds: [beta, alpha],
+        },
       },
     ],
   });
@@ -109,6 +165,20 @@ test("World deltas apply immutably and converge on the declared revision", () =>
     { kind: "unoccupied" },
     { kind: "occupied", playerId: beta },
   ]);
+  const projectedWaiting = result.snapshot.grid.cells[4];
+  assert.deepEqual(projectedWaiting, {
+    kind: "challengeWaiting",
+    challengeId: "challenge-3",
+    waitingId: 8,
+    defenderId: beta,
+    participantIds: [beta, alpha],
+  });
+  const deltaWaiting = delta.changes[2]?.cell;
+  assert.equal(projectedWaiting?.kind, "challengeWaiting");
+  assert.equal(deltaWaiting?.kind, "challengeWaiting");
+  if (projectedWaiting?.kind !== "challengeWaiting") return;
+  if (deltaWaiting?.kind !== "challengeWaiting") return;
+  assert.notEqual(projectedWaiting.participantIds, deltaWaiting.participantIds);
   assert.deepEqual(snapshot, makeWorldSnapshot());
   assert.notEqual(result.snapshot.grid.cells, snapshot.grid.cells);
 });
@@ -195,7 +265,13 @@ test("network protocol parses snapshots, deltas, command results, and joined ros
       revision: 4,
       changes: [{
         position: { x: 0, y: 0 },
-        cell: { kind: "unoccupied" },
+        cell: {
+          kind: "challengeWaiting",
+          challengeId: "challenge-3",
+          waitingId: 8,
+          defenderId: beta,
+          participantIds: [beta, alpha],
+        },
       }],
     },
     { type: "worldCommandAccepted", requestId: "request-1" },
@@ -243,6 +319,7 @@ test("World command rejections use the complete stable reason set", () => {
     "alreadyJoined",
     "challengeFull",
     "notParticipant",
+    "battleLimitReached",
   ];
   for (const reason of reasons) {
     const message = {
