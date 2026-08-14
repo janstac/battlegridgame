@@ -123,22 +123,35 @@ test("challenge and battle indexes follow validated replacements", () => {
   );
   assert.deepEqual(world.positionForChallenge("challenge-1"), { x: 0, y: 0 });
 
+  world.replaceCell(
+    { x: 0, y: 0 },
+    { kind: "challengePending", challengeId: "challenge-1" },
+    {
+      kind: "challengeWaiting",
+      challengeId: "challenge-1",
+      waitingId: 1,
+      defenderId: "defender",
+      participantIds: ["defender", "challenger"],
+    },
+  );
+  assert.deepEqual(world.positionForChallenge("challenge-1"), { x: 0, y: 0 });
+
   assert.throws(() => world.replaceCell(
     { x: 1, y: 0 },
     { kind: "unoccupied" },
     {
-      kind: "challengePending",
+      kind: "challengeWaiting",
       challengeId: "challenge-1",
+      waitingId: 2,
       defenderId: "other",
       participantIds: ["other", "third"],
-      closesAt: 10_000,
     },
   ), WorldRuntimeIndexConflictError);
-  assert.equal(world.revision, 1);
+  assert.equal(world.revision, 2);
 
   world.replaceCell(
     { x: 0, y: 0 },
-    { kind: "challengePending", challengeId: "challenge-1" },
+    { kind: "challengeWaiting", challengeId: "challenge-1" },
     { kind: "battle", battleId: "battle-1", playerIds: ["defender", "challenger"] },
   );
   assert.equal(world.positionForChallenge("challenge-1"), undefined);

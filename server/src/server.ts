@@ -2,6 +2,10 @@ import { createServer, type Server as HttpServer } from "node:http";
 import { AdminService } from "./admin/AdminService.ts";
 import { WorldCoordinator } from "./application/WorldCoordinator.ts";
 import { PlayerDirectory } from "./application/PlayerDirectory.ts";
+import {
+  DEFAULT_MAX_CONCURRENT_BATTLES_PER_PLAYER,
+  validateMaxConcurrentBattlesPerPlayer,
+} from "./application/PlayerBattleCapacity.ts";
 import { BattleRegistry } from "./game/BattleRegistry.ts";
 import { StandardBattleFactory } from "./game/StandardBattleFactory.ts";
 import type { HostedBattleClock } from "./game/HostedBattle.ts";
@@ -18,6 +22,7 @@ export type GridGameServerOptions = Readonly<{
   battleClock?: HostedBattleClock;
   challengeClock?: PendingChallengeClock;
   challengeDurationMs?: number;
+  maxConcurrentBattlesPerPlayer?: number;
   worldRandom?: RandomSource;
   adminMessageHandler?: AdminMessageHandler;
 }>;
@@ -33,6 +38,10 @@ export type GridGameServer = Readonly<{
 
 /** Composes the HTTP/WebSocket transport and transport-free application. */
 export function createGridGameServer(options: GridGameServerOptions = {}): GridGameServer {
+  const maxConcurrentBattlesPerPlayer = validateMaxConcurrentBattlesPerPlayer(
+    options.maxConcurrentBattlesPerPlayer
+      ?? DEFAULT_MAX_CONCURRENT_BATTLES_PER_PLAYER,
+  );
   const httpServer = createServer((_request, response) => {
     response.writeHead(404).end();
   });
@@ -51,6 +60,7 @@ export function createGridGameServer(options: GridGameServerOptions = {}): GridG
       ...(options.maxDebugPlayers === undefined ? {} : { maxDebugPlayers: options.maxDebugPlayers }),
       ...(options.challengeClock === undefined ? {} : { challengeClock: options.challengeClock }),
       ...(options.challengeDurationMs === undefined ? {} : { challengeDurationMs: options.challengeDurationMs }),
+      maxConcurrentBattlesPerPlayer,
     },
   );
   const admin = new AdminService(coordinator);

@@ -23,24 +23,28 @@ import type {
 } from "../game/HostedBattle.ts";
 import {
   DEFAULT_CHALLENGE_DURATION_MS,
-  PendingChallenge,
   type PendingChallengeClock,
-  type PendingChallengeEvent,
 } from "../world/PendingChallenge.ts";
+import { ChallengeRuntime } from "../world/ChallengeRuntime.ts";
+import { WaitingChallengeQueue } from "../world/WaitingChallengeQueue.ts";
 import type { World } from "../world/World.ts";
 import type { ClientConnection } from "./ClientConnection.ts";
 import type { PlayerDirectory } from "./PlayerDirectory.ts";
+import {
+  DEFAULT_MAX_CONCURRENT_BATTLES_PER_PLAYER,
+  PlayerBattleCapacity,
+} from "./PlayerBattleCapacity.ts";
 
 export type WorldCoordinatorOptions = Readonly<{
   debugEnabled?: boolean;
   maxDebugPlayers?: number;
   challengeClock?: PendingChallengeClock;
   challengeDurationMs?: number;
+  maxConcurrentBattlesPerPlayer?: number;
 }>;
 
 type PendingRuntime = Readonly<{
-  challenge: PendingChallenge;
-  unsubscribe(): void;
+  challenge: ChallengeRuntime;
 }>;
 
 export type AdminOperationFailure = Readonly<{
@@ -71,11 +75,14 @@ export class WorldCoordinator {
   private readonly maxDebugPlayers: number;
   private readonly challengeClock: PendingChallengeClock | undefined;
   private readonly challengeDurationMs: number;
+  private readonly capacity: PlayerBattleCapacity;
   private readonly challenges = new Map<ChallengeId, PendingRuntime>();
+  private readonly waitingChallenges = new WaitingChallengeQueue();
   private readonly closedChallenges = new Set<ChallengeId>();
   private readonly terminalUnsubscribers = new Map<BattleId, () => void>();
   private operations: Promise<void> = Promise.resolve();
   private nextChallengeSequence = 1;
+  private drainingWaitingChallenges = false;
   private disposed = false;
 
   constructor(
@@ -97,9 +104,15 @@ export class WorldCoordinator {
     this.challengeClock = options.challengeClock;
     this.challengeDurationMs = options.challengeDurationMs
       ?? DEFAULT_CHALLENGE_DURATION_MS;
+    this.capacity = new PlayerBattleCapacity(
+      battles,
+      options.maxConcurrentBattlesPerPlayer
+        ?? DEFAULT_MAX_CONCURRENT_BATTLES_PER_PLAYER,
+    );
   }
 
   connectedPlayerIds(): readonly PlayerId[] { return this.players.playerIds(); }
+  get maxConcurrentBattlesPerPlayer(): number { return this.capacity.maximum; }
 
   async adminListPlayers(): Promise<readonly PlayerId[]> {
     return await this.enqueue(() => this.players.playerIds()
@@ -232,6 +245,11 @@ export class WorldCoordinator {
             pendingChallenges.set(actual.challengeId, runtime);
             break;
           }
+          case "challengeWaiting":
+            return adminFailure(
+              "lifecycleNotFound",
+              `Waiting challenge ${actual.challengeId} cannot be replaced by this core lifecycle`,
+            );
           case "battle": {
             const battle = this.battles.get(actual.battleId);
             const rosterPlayerIds = battle?.getRoster().map(({ playerId }) => playerId);
@@ -256,10 +274,7 @@ export class WorldCoordinator {
       }
 
       for (const [challengeId, runtime] of pendingChallenges) {
-        this.challenges.delete(challengeId);
-        this.closedChallenges.add(challengeId);
-        runtime.unsubscribe();
-        runtime.challenge.dispose();
+        this.finishChallenge(challengeId);
       }
       for (const [battleId, battle] of hostedBattles) {
         this.terminalUnsubscribers.get(battleId)?.();
@@ -318,26 +333,37 @@ export class WorldCoordinator {
       if (cell.playerId === requester.playerId) return "selfChallenge";
       const defender = this.players.get(cell.playerId);
       if (defender === undefined || defender.isClosed) return "invalidTarget";
+      if (!this.capacity.hasCapacity(requester.playerId)) {
+        return "battleLimitReached";
+      }
 
       const challengeId = `challenge-${this.nextChallengeSequence++}`;
-      let challenge: PendingChallenge;
-      challenge = new PendingChallenge({
-        challengeId,
-        position,
-        defenderId: cell.playerId,
-        challengerId: requester.playerId,
-        isPlayerConnected: (playerId) => {
-          const connection = this.players.get(playerId);
-          return connection !== undefined && !connection.isClosed;
-        },
-        ...(this.challengeClock === undefined ? {} : { clock: this.challengeClock }),
-        durationMs: this.challengeDurationMs,
-      });
-      const unsubscribe = challenge.subscribe((event) => {
-        void this.enqueue(() => this.handleChallengeEvent(event)).catch(() => undefined);
-      });
-      this.challenges.set(challengeId, { challenge, unsubscribe });
+      const initialRoster = [cell.playerId, requester.playerId];
+      const startsCountdown = this.capacity.reserveRoster(challengeId, initialRoster);
+      const waitingId = startsCountdown
+        ? undefined
+        : this.waitingChallenges.enqueue(challengeId);
+      let challenge: ChallengeRuntime | undefined;
       try {
+        challenge = new ChallengeRuntime({
+          challengeId,
+          position,
+          defenderId: cell.playerId,
+          challengerId: requester.playerId,
+          ...(waitingId === undefined ? {} : { waitingId }),
+          isPlayerConnected: (playerId) => {
+            const connection = this.players.get(playerId);
+            return connection !== undefined && !connection.isClosed;
+          },
+          onExpired: (expiredChallengeId) => {
+            void this.enqueue(
+              () => this.startExpiredChallenge(expiredChallengeId),
+            ).catch(() => undefined);
+          },
+          ...(this.challengeClock === undefined ? {} : { clock: this.challengeClock }),
+          durationMs: this.challengeDurationMs,
+        });
+        this.challenges.set(challengeId, { challenge });
         this.world.replaceCell(
           position,
           { kind: "occupied", playerId: cell.playerId },
@@ -345,8 +371,9 @@ export class WorldCoordinator {
         );
       } catch (error) {
         this.challenges.delete(challengeId);
-        unsubscribe();
-        challenge.dispose();
+        this.waitingChallenges.remove(challengeId);
+        this.capacity.releaseChallenge(challengeId);
+        challenge?.dispose();
         throw error;
       }
       return null;
@@ -364,8 +391,29 @@ export class WorldCoordinator {
           ? "challengeClosed"
           : "unknownChallenge";
       }
+      const rejection = runtime.challenge.joinRejection(requester.playerId);
+      if (rejection !== null) return rejection;
+      if (!this.capacity.hasCapacity(requester.playerId)) {
+        return "battleLimitReached";
+      }
+
+      const wasCountdown = runtime.challenge.phase === "countdown";
+      if (wasCountdown && !this.capacity.reservePlayer(
+        challengeId,
+        requester.playerId,
+      )) {
+        return "battleLimitReached";
+      }
       const result = runtime.challenge.join(requester.playerId);
-      return result.accepted ? null : result.reason;
+      if (!result.accepted) {
+        if (wasCountdown) {
+          this.capacity.releasePlayer(challengeId, requester.playerId);
+        }
+        return result.reason;
+      }
+      this.replaceOpenChallengeCell(runtime.challenge);
+      if (!wasCountdown) this.drainWaitingChallenges();
+      return null;
     });
   }
 
@@ -380,8 +428,24 @@ export class WorldCoordinator {
           ? "challengeClosed"
           : "unknownChallenge";
       }
+      const wasCountdown = runtime.challenge.phase === "countdown";
       const result = runtime.challenge.leave(requester.playerId);
-      return result.accepted ? null : result.reason;
+      if (!result.accepted) return result.reason;
+      if (result.cancellation !== undefined) {
+        this.world.replaceCell(
+          runtime.challenge.position,
+          this.challengeExpectation(runtime.challenge),
+          result.cancellation.replacementCell,
+        );
+        this.finishChallenge(challengeId);
+      } else {
+        this.replaceOpenChallengeCell(runtime.challenge);
+        if (wasCountdown && result.removedPlayerId !== undefined) {
+          this.capacity.releasePlayer(challengeId, result.removedPlayerId);
+        }
+      }
+      this.drainWaitingChallenges();
+      return null;
     });
   }
 
@@ -428,6 +492,7 @@ export class WorldCoordinator {
       if (membership === undefined) return;
       await membership.battle.withdraw(membership.participantId);
       connection.detachBattle(battleId, true, requestId);
+      this.drainWaitingChallenges();
     });
   }
 
@@ -435,7 +500,25 @@ export class WorldCoordinator {
   async disconnect(connection: ClientConnection): Promise<void> {
     await this.enqueue(async () => {
       for (const runtime of [...this.challenges.values()]) {
-        runtime.challenge.disconnect(connection.playerId);
+        const wasCountdown = runtime.challenge.phase === "countdown";
+        const result = runtime.challenge.disconnect(connection.playerId);
+        if (result === null || !result.accepted) continue;
+        if (result.cancellation !== undefined) {
+          this.world.replaceCell(
+            runtime.challenge.position,
+            this.challengeExpectation(runtime.challenge),
+            result.cancellation.replacementCell,
+          );
+          this.finishChallenge(runtime.challenge.challengeId);
+        } else {
+          this.replaceOpenChallengeCell(runtime.challenge);
+          if (wasCountdown && result.removedPlayerId !== undefined) {
+            this.capacity.releasePlayer(
+              runtime.challenge.challengeId,
+              result.removedPlayerId,
+            );
+          }
+        }
       }
       const memberships = this.battles.membershipsForPlayer(connection.playerId);
       for (const { battleId, battle } of memberships) {
@@ -445,6 +528,7 @@ export class WorldCoordinator {
       }
       this.world.clearOccupiedCells(connection.playerId);
       this.players.remove(connection.playerId, connection);
+      this.drainWaitingChallenges();
     });
   }
 
@@ -457,40 +541,18 @@ export class WorldCoordinator {
     }
     this.disposed = true;
     for (const runtime of this.challenges.values()) {
-      runtime.unsubscribe();
       runtime.challenge.dispose();
     }
     this.challenges.clear();
+    this.waitingChallenges.clear();
+    this.capacity.clear();
     for (const unsubscribe of this.terminalUnsubscribers.values()) unsubscribe();
     this.terminalUnsubscribers.clear();
   }
 
-  private handleChallengeEvent(event: PendingChallengeEvent): void {
-    const runtime = this.challenges.get(event.challenge.challengeId);
-    if (runtime === undefined) return;
-    switch (event.kind) {
-      case "rosterChanged":
-        this.world.replaceCell(
-          event.challenge.position,
-          { kind: "challengePending", challengeId: event.challenge.challengeId },
-          runtime.challenge.worldCell(),
-        );
-        return;
-      case "cancelled":
-        this.world.replaceCell(
-          event.challenge.position,
-          { kind: "challengePending", challengeId: event.challenge.challengeId },
-          event.replacementCell,
-        );
-        this.finishChallenge(event.challenge.challengeId);
-        return;
-      case "expired":
-        this.startExpiredChallenge(runtime);
-        return;
-    }
-  }
-
-  private startExpiredChallenge(runtime: PendingRuntime): void {
+  private async startExpiredChallenge(challengeId: ChallengeId): Promise<void> {
+    const runtime = this.challenges.get(challengeId);
+    if (runtime === undefined || runtime.challenge.phase !== "expired") return;
     const challenge = runtime.challenge;
     const defender = this.players.get(challenge.defenderId);
     if (defender === undefined || defender.isClosed) {
@@ -500,6 +562,7 @@ export class WorldCoordinator {
         { kind: "unoccupied" },
       );
       this.finishChallenge(challenge.challengeId);
+      this.drainWaitingChallenges();
       return;
     }
     const playerIds = challenge.participantIds.filter((playerId) => {
@@ -513,21 +576,49 @@ export class WorldCoordinator {
         { kind: "occupied", playerId: challenge.defenderId },
       );
       this.finishChallenge(challenge.challengeId);
+      this.drainWaitingChallenges();
       return;
     }
 
-    const battle = this.factory.create(playerIds, challenge.position);
-    const battleId = this.registerBattle(battle);
-    this.world.replaceCell(
-      challenge.position,
-      { kind: "challengePending", challengeId: challenge.challengeId },
-      { kind: "battle", battleId, playerIds },
-    );
-    this.finishChallenge(challenge.challengeId);
-    for (const playerId of playerIds) {
-      this.players.get(playerId)?.attachBattle(battleId, battle);
+    let battle: HostedBattle;
+    try {
+      battle = this.factory.create(playerIds, challenge.position);
+    } catch {
+      this.world.replaceCell(
+        challenge.position,
+        { kind: "challengePending", challengeId: challenge.challengeId },
+        { kind: "occupied", playerId: challenge.defenderId },
+      );
+      this.finishChallenge(challenge.challengeId);
+      this.drainWaitingChallenges();
+      return;
     }
+
+    this.capacity.releaseChallenge(challenge.challengeId);
+    let battleId: BattleId | undefined;
+    try {
+      battleId = this.registerBattle(battle);
+      this.world.replaceCell(
+        challenge.position,
+        { kind: "challengePending", challengeId: challenge.challengeId },
+        { kind: "battle", battleId, playerIds },
+      );
+    } catch (error) {
+      if (battleId !== undefined) {
+        this.terminalUnsubscribers.get(battleId)?.();
+        this.terminalUnsubscribers.delete(battleId);
+        await this.battles.remove(battleId);
+      } else {
+        await battle.dispose();
+      }
+      this.finishChallenge(challenge.challengeId);
+      throw error;
+    }
+    if (battleId === undefined) throw new Error("Battle registration produced no identifier");
+    this.finishChallenge(challenge.challengeId);
+    for (const playerId of playerIds) this.players.get(playerId)?.attachBattle(battleId, battle);
     battle.start();
+    this.drainWaitingChallenges();
   }
 
   private finishChallenge(challengeId: ChallengeId): void {
@@ -535,8 +626,72 @@ export class WorldCoordinator {
     if (runtime === undefined) return;
     this.challenges.delete(challengeId);
     this.closedChallenges.add(challengeId);
-    runtime.unsubscribe();
+    this.waitingChallenges.remove(challengeId);
+    this.capacity.releaseChallenge(challengeId);
     runtime.challenge.dispose();
+  }
+
+  private replaceOpenChallengeCell(challenge: ChallengeRuntime): void {
+    this.world.replaceCell(
+      challenge.position,
+      this.challengeExpectation(challenge),
+      challenge.worldCell(),
+    );
+  }
+
+  private challengeExpectation(challenge: ChallengeRuntime):
+    | Readonly<{ kind: "challengePending"; challengeId: ChallengeId }>
+    | Readonly<{ kind: "challengeWaiting"; challengeId: ChallengeId }> {
+    const cell = this.world.cellAt(challenge.position);
+    if (
+      (cell.kind === "challengePending" || cell.kind === "challengeWaiting")
+      && cell.challengeId === challenge.challengeId
+    ) {
+      return { kind: cell.kind, challengeId: challenge.challengeId };
+    }
+    throw new Error(`Challenge ${challenge.challengeId} has no matching World cell`);
+  }
+
+  /** Promotes every currently eligible roster in stable Waiting-ID order. */
+  private drainWaitingChallenges(): void {
+    if (this.drainingWaitingChallenges) return;
+    this.drainingWaitingChallenges = true;
+    try {
+      for (;;) {
+        let promoted = false;
+        for (const entry of this.waitingChallenges.entriesInOrder()) {
+          const runtime = this.challenges.get(entry.challengeId);
+          if (
+            runtime === undefined
+            || runtime.challenge.phase !== "waiting"
+            || runtime.challenge.waitingId !== entry.waitingId
+          ) {
+            this.waitingChallenges.remove(entry.challengeId);
+            continue;
+          }
+          const roster = runtime.challenge.participantIds;
+          if (!this.capacity.reserveRoster(entry.challengeId, roster)) continue;
+          try {
+            runtime.challenge.promoteToCountdown();
+            this.world.replaceCell(
+              runtime.challenge.position,
+              { kind: "challengeWaiting", challengeId: entry.challengeId },
+              runtime.challenge.worldCell(),
+            );
+            this.waitingChallenges.remove(entry.challengeId);
+          } catch (error) {
+            runtime.challenge.rollbackPromotion();
+            this.capacity.releaseChallenge(entry.challengeId);
+            throw error;
+          }
+          promoted = true;
+          break;
+        }
+        if (!promoted) return;
+      }
+    } finally {
+      this.drainingWaitingChallenges = false;
+    }
   }
 
   private registerBattle(battle: HostedBattle): BattleId {
@@ -583,6 +738,7 @@ export class WorldCoordinator {
     this.terminalUnsubscribers.get(battleId)?.();
     this.terminalUnsubscribers.delete(battleId);
     await this.battles.remove(battleId);
+    this.drainWaitingChallenges();
   }
 
   private async enqueue<T>(operation: () => T | Promise<T>): Promise<T> {
@@ -629,6 +785,12 @@ function worldCellsEqual(left: WorldCell, right: WorldCell): boolean {
         && left.challengeId === right.challengeId
         && left.defenderId === right.defenderId
         && left.closesAt === right.closesAt
+        && stringArraysEqual(left.participantIds, right.participantIds);
+    case "challengeWaiting":
+      return right.kind === "challengeWaiting"
+        && left.challengeId === right.challengeId
+        && left.waitingId === right.waitingId
+        && left.defenderId === right.defenderId
         && stringArraysEqual(left.participantIds, right.participantIds);
     case "battle":
       return right.kind === "battle"

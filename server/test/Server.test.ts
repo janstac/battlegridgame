@@ -40,7 +40,11 @@ const battleClock: HostedBattleClock = {
   clearInterval: () => undefined,
 };
 
-async function harness(debugEnabled = true) {
+async function harness(
+  debugEnabled = true,
+  maxConcurrentBattlesPerPlayer = 4,
+  factory: StandardBattleFactory = new StandardBattleFactory(battleClock),
+) {
   const players = new PlayerDirectory();
   const battles = new BattleRegistry();
   const world = new World({ random: { next: () => 0 } });
@@ -49,8 +53,8 @@ async function harness(debugEnabled = true) {
     players,
     battles,
     world,
-    new StandardBattleFactory(battleClock),
-    { debugEnabled, challengeClock },
+    factory,
+    { debugEnabled, challengeClock, maxConcurrentBattlesPerPlayer },
   );
   const connect = async () => {
     const messages: NetworkServerMessage[] = [];
@@ -234,4 +238,296 @@ test("the internal detached battle helper remains gated", async (t) => {
   assert.equal(first.messages.some(
     (message) => message.type === "battleMessage" && message.message.type === "cellIncremented",
   ), true);
+});
+
+test("countdown reservations reject capped creators and joiners", async (t) => {
+  const app = await harness(true, 1);
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const first = await app.connect();
+  const second = await app.connect();
+  const third = await app.connect();
+  const fourth = await app.connect();
+  const fifth = await app.connect();
+
+  await first.connection.receive({
+    type: "challengeWorldCell", requestId: "first", position: { x: 2, y: 0 },
+  });
+  const pending = app.world.cellAt({ x: 2, y: 0 });
+  assert.equal(pending.kind, "challengePending");
+
+  await first.connection.receive({
+    type: "challengeWorldCell", requestId: "capped-create", position: { x: 4, y: 0 },
+  });
+  assert.deepEqual(first.messages.at(-1), {
+    type: "worldCommandRejected",
+    requestId: "capped-create",
+    reason: "battleLimitReached",
+  });
+  if (pending.kind !== "challengePending") return;
+  await third.connection.receive({
+    type: "joinWorldChallenge", requestId: "join", challengeId: pending.challengeId,
+  });
+  assert.equal(third.messages.at(-1)?.type, "worldCommandAccepted");
+  await third.connection.receive({
+    type: "challengeWorldCell", requestId: "reserved-create", position: { x: 6, y: 0 },
+  });
+  assert.deepEqual(third.messages.at(-1), {
+    type: "worldCommandRejected",
+    requestId: "reserved-create",
+    reason: "battleLimitReached",
+  });
+
+  await app.coordinator.createDebugBattle(
+    fourth.connection,
+    [fourth.connection.playerId, fifth.connection.playerId],
+  );
+  const otherPending = app.world.cellAt({ x: 2, y: 0 });
+  if (otherPending.kind !== "challengePending") return;
+  await fourth.connection.receive({
+    type: "joinWorldChallenge",
+    requestId: "capped-join",
+    challengeId: otherPending.challengeId,
+  });
+  assert.deepEqual(fourth.messages.at(-1), {
+    type: "worldCommandRejected",
+    requestId: "capped-join",
+    reason: "battleLimitReached",
+  });
+});
+
+test("eligible challengers create Waiting against capped defenders", async (t) => {
+  const app = await harness(true, 1);
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const defender = await app.connect();
+  const opponent = await app.connect();
+  const challenger = await app.connect();
+  const waitingJoiner = await app.connect();
+  const otherDefender = await app.connect();
+  assert.equal(await app.coordinator.createDebugBattle(
+    defender.connection,
+    [defender.connection.playerId, opponent.connection.playerId],
+  ), null);
+
+  await challenger.connection.receive({
+    type: "challengeWorldCell", requestId: "waiting", position: { x: 0, y: 0 },
+  });
+  const waiting = app.world.cellAt({ x: 0, y: 0 });
+  assert.deepEqual(waiting, {
+    kind: "challengeWaiting",
+    challengeId: "challenge-1",
+    waitingId: 1,
+    defenderId: defender.connection.playerId,
+    participantIds: [defender.connection.playerId, challenger.connection.playerId],
+  });
+  if (waiting.kind !== "challengeWaiting") return;
+
+  await waitingJoiner.connection.receive({
+    type: "joinWorldChallenge", requestId: "waiting-join", challengeId: waiting.challengeId,
+  });
+  assert.equal(waitingJoiner.messages.at(-1)?.type, "worldCommandAccepted");
+  await waitingJoiner.connection.receive({
+    type: "challengeWorldCell", requestId: "still-free", position: { x: 8, y: 0 },
+  });
+  assert.equal(waitingJoiner.messages.at(-1)?.type, "worldCommandAccepted");
+});
+
+test("capacity release promotes Waiting and does not reuse Waiting IDs", async (t) => {
+  const app = await harness(true, 1);
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const defender = await app.connect();
+  const opponent = await app.connect();
+  const firstChallenger = await app.connect();
+  const secondChallenger = await app.connect();
+  await app.coordinator.createDebugBattle(
+    defender.connection,
+    [defender.connection.playerId, opponent.connection.playerId],
+  );
+
+  await firstChallenger.connection.receive({
+    type: "challengeWorldCell", requestId: "first-wait", position: { x: 0, y: 0 },
+  });
+  const firstWaiting = app.world.cellAt({ x: 0, y: 0 });
+  assert.equal(firstWaiting.kind === "challengeWaiting" ? firstWaiting.waitingId : -1, 1);
+  if (firstWaiting.kind !== "challengeWaiting") return;
+  await firstChallenger.connection.receive({
+    type: "leaveWorldChallenge", requestId: "cancel", challengeId: firstWaiting.challengeId,
+  });
+
+  await secondChallenger.connection.receive({
+    type: "challengeWorldCell", requestId: "second-wait", position: { x: 1, y: 0 },
+  });
+  const secondWaiting = app.world.cellAt({ x: 1, y: 0 });
+  assert.equal(secondWaiting.kind === "challengeWaiting" ? secondWaiting.waitingId : -1, 2);
+
+  await defender.connection.receive({ type: "leaveBattle", battleId: "battle-1" });
+  await app.coordinator.adminGetWorld();
+  const promoted = app.world.cellAt({ x: 1, y: 0 });
+  assert.equal(promoted.kind, "challengePending");
+  assert.equal(promoted.kind === "challengePending" ? promoted.challengeId : null, "challenge-2");
+});
+
+test("promotion skips an older blocked roster and restores its ID priority later", async (t) => {
+  const app = await harness(true, 1);
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const firstDefender = await app.connect();
+  const firstOpponent = await app.connect();
+  const secondDefender = await app.connect();
+  const secondOpponent = await app.connect();
+  const firstChallenger = await app.connect();
+  const secondChallenger = await app.connect();
+  await app.coordinator.createDebugBattle(firstDefender.connection, [
+    firstDefender.connection.playerId, firstOpponent.connection.playerId,
+  ]);
+  await app.coordinator.createDebugBattle(secondDefender.connection, [
+    secondDefender.connection.playerId, secondOpponent.connection.playerId,
+  ]);
+  await firstChallenger.connection.receive({
+    type: "challengeWorldCell", requestId: "older", position: { x: 0, y: 0 },
+  });
+  await secondChallenger.connection.receive({
+    type: "challengeWorldCell", requestId: "younger", position: { x: 4, y: 0 },
+  });
+  assert.equal(app.world.cellAt({ x: 0, y: 0 }).kind, "challengeWaiting");
+  assert.equal(app.world.cellAt({ x: 4, y: 0 }).kind, "challengeWaiting");
+
+  await secondDefender.connection.receive({ type: "leaveBattle", battleId: "battle-2" });
+  await app.coordinator.adminGetWorld();
+  assert.equal(app.world.cellAt({ x: 0, y: 0 }).kind, "challengeWaiting");
+  assert.equal(app.world.cellAt({ x: 4, y: 0 }).kind, "challengePending");
+
+  await firstDefender.connection.receive({ type: "leaveBattle", battleId: "battle-1" });
+  await app.coordinator.adminGetWorld();
+  assert.equal(app.world.cellAt({ x: 0, y: 0 }).kind, "challengePending");
+});
+
+test("countdown cancellation releases reservations before promoting Waiting", async (t) => {
+  const app = await harness(true, 1);
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const first = await app.connect();
+  const defender = await app.connect();
+  const second = await app.connect();
+  await first.connection.receive({
+    type: "challengeWorldCell", requestId: "countdown", position: { x: 2, y: 0 },
+  });
+  await second.connection.receive({
+    type: "challengeWorldCell", requestId: "waiting", position: { x: 3, y: 0 },
+  });
+  const countdown = app.world.cellAt({ x: 2, y: 0 });
+  assert.equal(countdown.kind, "challengePending");
+  assert.equal(app.world.cellAt({ x: 3, y: 0 }).kind, "challengeWaiting");
+  if (countdown.kind !== "challengePending") return;
+
+  await first.connection.receive({
+    type: "leaveWorldChallenge", requestId: "cancel", challengeId: countdown.challengeId,
+  });
+  assert.equal(app.world.cellAt({ x: 2, y: 0 }).kind, "occupied");
+  assert.equal(app.world.cellAt({ x: 3, y: 0 }).kind, "challengePending");
+  assert.equal(defender.messages.some(
+    (message) => message.type === "worldCommandRejected",
+  ), false);
+});
+
+test("expiry creation failure rolls back the cell and releases reservations", async (t) => {
+  class FailingBattleFactory extends StandardBattleFactory {
+    override create(): never { throw new Error("factory failed"); }
+  }
+  const app = await harness(true, 1, new FailingBattleFactory(battleClock));
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const challenger = await app.connect();
+  await app.connect();
+  await challenger.connection.receive({
+    type: "challengeWorldCell", requestId: "first", position: { x: 2, y: 0 },
+  });
+  app.challengeClock.advance(5_000);
+  await app.coordinator.adminGetWorld();
+  assert.deepEqual(app.world.cellAt({ x: 2, y: 0 }), {
+    kind: "occupied", playerId: "player-2",
+  });
+  assert.deepEqual(app.battles.entries(), []);
+
+  await challenger.connection.receive({
+    type: "challengeWorldCell", requestId: "retry", position: { x: 2, y: 0 },
+  });
+  assert.equal(challenger.messages.at(-1)?.type, "worldCommandAccepted");
+  assert.equal(app.world.cellAt({ x: 2, y: 0 }).kind, "challengePending");
+});
+
+test("countdown-to-battle conversion preserves the occupied capacity slot", async (t) => {
+  const app = await harness(true, 1);
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const first = await app.connect();
+  await app.connect();
+  await app.connect();
+  await first.connection.receive({
+    type: "challengeWorldCell", requestId: "countdown", position: { x: 2, y: 0 },
+  });
+  app.challengeClock.advance(5_000);
+  await app.coordinator.adminGetWorld();
+  assert.equal(app.world.cellAt({ x: 2, y: 0 }).kind, "battle");
+
+  await first.connection.receive({
+    type: "challengeWorldCell", requestId: "active", position: { x: 4, y: 0 },
+  });
+  assert.deepEqual(first.messages.at(-1), {
+    type: "worldCommandRejected",
+    requestId: "active",
+    reason: "battleLimitReached",
+  });
+});
+
+test("disconnect cancels Waiting without leaking its queue lifetime", async (t) => {
+  const app = await harness(true, 1);
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const defender = await app.connect();
+  const opponent = await app.connect();
+  const challenger = await app.connect();
+  const nextChallenger = await app.connect();
+  await app.coordinator.createDebugBattle(defender.connection, [
+    defender.connection.playerId, opponent.connection.playerId,
+  ]);
+  await challenger.connection.receive({
+    type: "challengeWorldCell", requestId: "waiting", position: { x: 0, y: 0 },
+  });
+  assert.equal(app.world.cellAt({ x: 0, y: 0 }).kind, "challengeWaiting");
+  await challenger.connection.close();
+  assert.deepEqual(app.world.cellAt({ x: 0, y: 0 }), {
+    kind: "occupied", playerId: defender.connection.playerId,
+  });
+
+  await nextChallenger.connection.receive({
+    type: "challengeWorldCell", requestId: "next", position: { x: 0, y: 0 },
+  });
+  const nextWaiting = app.world.cellAt({ x: 0, y: 0 });
+  assert.equal(nextWaiting.kind === "challengeWaiting" ? nextWaiting.waitingId : -1, 2);
+});
+
+test("active battle leaves release slots for nonconflicting Waiting rosters", async (t) => {
+  const app = await harness(true, 1);
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const first = await app.connect();
+  const second = await app.connect();
+  const third = await app.connect();
+  const fourth = await app.connect();
+  const firstChallenger = await app.connect();
+  const secondChallenger = await app.connect();
+  await app.coordinator.createDebugBattle(first.connection, [
+    first.connection.playerId,
+    second.connection.playerId,
+    third.connection.playerId,
+    fourth.connection.playerId,
+  ]);
+  await firstChallenger.connection.receive({
+    type: "challengeWorldCell", requestId: "first", position: { x: 0, y: 0 },
+  });
+  await secondChallenger.connection.receive({
+    type: "challengeWorldCell", requestId: "second", position: { x: 2, y: 0 },
+  });
+  assert.equal(app.world.cellAt({ x: 0, y: 0 }).kind, "challengeWaiting");
+  assert.equal(app.world.cellAt({ x: 2, y: 0 }).kind, "challengeWaiting");
+
+  await first.connection.receive({ type: "leaveBattle", battleId: "battle-1" });
+  assert.equal(app.world.cellAt({ x: 0, y: 0 }).kind, "challengePending");
+  assert.equal(app.world.cellAt({ x: 2, y: 0 }).kind, "challengeWaiting");
+  await second.connection.receive({ type: "leaveBattle", battleId: "battle-1" });
+  assert.equal(app.world.cellAt({ x: 2, y: 0 }).kind, "challengePending");
 });

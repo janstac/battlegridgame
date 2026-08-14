@@ -7,6 +7,7 @@ import {
   type NetworkWebSocket,
 } from "../../client/src/session/NetworkClient.ts";
 import type { NetworkBattleSession } from "../../client/src/session/NetworkBattleSession.ts";
+import { WorldCommandRejectedError } from "../../client/src/session/NetworkWorldSession.ts";
 import type { ServerMessage } from "@grid-game/shared";
 import { WebSocket } from "ws";
 import { createGridGameServer } from "../src/server.ts";
@@ -109,7 +110,7 @@ function waitForSessionMessage(
   }), description);
 }
 
-async function startServer(t: TestContext) {
+async function startServer(t: TestContext, maxConcurrentBattlesPerPlayer?: number) {
   const clock = new ManualHostedBattleClock();
   const challengeClock = new ManualChallengeClock();
   const server = createGridGameServer({
@@ -117,6 +118,9 @@ async function startServer(t: TestContext) {
     battleClock: clock,
     challengeClock,
     worldRandom: { next: () => 0 },
+    ...(maxConcurrentBattlesPerPlayer === undefined
+      ? {}
+      : { maxConcurrentBattlesPerPlayer }),
   });
   const clients = new Set<NetworkClient>();
   await withTimeout(new Promise<void>((resolve, reject) => {
@@ -326,4 +330,34 @@ test("real clients observe the World while only challenge participants receive i
     { kind: "occupied", playerId: defender.playerId },
   );
   assert.equal(app.server.battles.get(challengerEvent.session.battleId), undefined);
+});
+
+test("real clients receive Waiting cells and structured capacity rejection", async (t) => {
+  const app = await startServer(t, 1);
+  const defender = await app.connect();
+  const opponent = await app.connect();
+  const challenger = await app.connect();
+  await Promise.all([defender.world.ready, opponent.world.ready, challenger.world.ready]);
+  const defenderConnection = app.server.players.get(defender.playerId);
+  assert.ok(defenderConnection);
+  assert.equal(await app.server.coordinator.createDebugBattle(defenderConnection, [
+    defender.playerId, opponent.playerId,
+  ]), null);
+
+  await challenger.world.challengeCell({ x: 0, y: 0 });
+  assert.deepEqual(
+    challenger.world.state.getSnapshot().snapshot?.grid.cells[0],
+    {
+      kind: "challengeWaiting",
+      challengeId: "challenge-1",
+      waitingId: 1,
+      defenderId: defender.playerId,
+      participantIds: [defender.playerId, challenger.playerId],
+    },
+  );
+  await assert.rejects(
+    defender.world.challengeCell({ x: 4, y: 0 }),
+    (error: unknown) => error instanceof WorldCommandRejectedError
+      && error.reason === "battleLimitReached",
+  );
 });

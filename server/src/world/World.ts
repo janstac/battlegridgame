@@ -28,6 +28,7 @@ export type WorldCellExpectation =
   | Readonly<{ kind: "unoccupied" }>
   | Readonly<{ kind: "occupied"; playerId?: PlayerId }>
   | Readonly<{ kind: "challengePending"; challengeId?: ChallengeId }>
+  | Readonly<{ kind: "challengeWaiting"; challengeId?: ChallengeId }>
   | Readonly<{ kind: "battle"; battleId?: BattleId }>;
 
 /** One member of an atomic World mutation batch. */
@@ -291,6 +292,9 @@ function matchesExpectation(cell: WorldCell, expected: WorldCellExpectation): bo
     case "challengePending":
       return expected.challengeId === undefined
         || (cell.kind === "challengePending" && cell.challengeId === expected.challengeId);
+    case "challengeWaiting":
+      return expected.challengeId === undefined
+        || (cell.kind === "challengeWaiting" && cell.challengeId === expected.challengeId);
     case "battle":
       return expected.battleId === undefined
         || (cell.kind === "battle" && cell.battleId === expected.battleId);
@@ -302,7 +306,9 @@ function removeRuntimeIndex(
   battles: Map<BattleId, Position>,
   cell: WorldCell,
 ): void {
-  if (cell.kind === "challengePending") challenges.delete(cell.challengeId);
+  if (cell.kind === "challengePending" || cell.kind === "challengeWaiting") {
+    challenges.delete(cell.challengeId);
+  }
   if (cell.kind === "battle") battles.delete(cell.battleId);
 }
 
@@ -312,7 +318,7 @@ function addRuntimeIndex(
   position: Position,
   cell: WorldCell,
 ): void {
-  if (cell.kind === "challengePending") {
+  if (cell.kind === "challengePending" || cell.kind === "challengeWaiting") {
     if (challenges.has(cell.challengeId)) {
       throw new WorldRuntimeIndexConflictError("challenge", cell.challengeId);
     }
