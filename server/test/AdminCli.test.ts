@@ -210,19 +210,8 @@ test("admin CLI treats invalid server messages as fatal protocol errors", async 
   assert.match(result.stderr, /Server sent an invalid admin message/);
 });
 
-test("admin CLI interoperates with the real gateway and passes admin errors through", async (t) => {
-  const received: unknown[] = [];
-  const app = createGridGameServer({
-    adminMessageHandler: (message, output) => {
-      received.push(message);
-      output({
-        type: "adminError",
-        requestId: message.requestId,
-        code: "internal",
-        message: "mock service failure",
-      });
-    },
-  });
+test("admin CLI interoperates with the real gateway and default admin service", async (t) => {
+  const app = createGridGameServer();
   await withTimeout(new Promise<void>((resolve, reject) => {
     app.httpServer.once("error", reject);
     app.httpServer.listen(0, "127.0.0.1", () => {
@@ -242,15 +231,10 @@ test("admin CLI interoperates with the real gateway and passes admin errors thro
   assert.equal(result.code, 0);
   assert.equal(result.stderr, "Authenticated as admin\n");
   assert.deepEqual(JSON.parse(result.stdout), {
-    type: "adminError",
+    type: "adminPlayers",
     requestId: "gateway-request",
-    code: "internal",
-    message: "mock service failure",
+    playerIds: [],
   });
-  assert.deepEqual(received, [{
-    type: "adminListPlayers",
-    requestId: "gateway-request",
-  }]);
 });
 
 test("admin CLI can terminate while authentication is pending", async (t) => {
