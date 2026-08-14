@@ -3,15 +3,18 @@ import type { ChallengeId, WaitingId } from "@grid-game/shared";
 /** Process-local monotonic Waiting identifiers with stable ordered iteration. */
 export class WaitingChallengeQueue {
   private readonly waiting = new Map<ChallengeId, WaitingId>();
-  private nextSequence = 1;
+  private nextSequence: WaitingId | null = 1;
 
   enqueue(challengeId: ChallengeId): WaitingId {
     const existing = this.waiting.get(challengeId);
     if (existing !== undefined) return existing;
-    if (!Number.isSafeInteger(this.nextSequence)) {
+    if (this.nextSequence === null) {
       throw new RangeError("Waiting challenge identifier space is exhausted");
     }
-    const waitingId = this.nextSequence++;
+    const waitingId = this.nextSequence;
+    this.nextSequence = waitingId === Number.MAX_SAFE_INTEGER
+      ? null
+      : waitingId + 1;
     this.waiting.set(challengeId, waitingId);
     return waitingId;
   }

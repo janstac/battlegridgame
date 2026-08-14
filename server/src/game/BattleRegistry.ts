@@ -4,10 +4,15 @@ import type { HostedBattle } from "./HostedBattle.ts";
 /** Owns hosted battles and monotonic process-local identifiers. */
 export class BattleRegistry {
   private readonly battles = new Map<BattleId, HostedBattle>();
-  private nextSequence = 1;
+  private nextSequence: number | null = 1;
 
   register(battle: HostedBattle): BattleId {
-    const battleId = `battle-${this.nextSequence++}`;
+    if (this.nextSequence === null) {
+      throw new RangeError("Battle identifier space is exhausted");
+    }
+    const sequence = this.nextSequence;
+    this.nextSequence = sequence === Number.MAX_SAFE_INTEGER ? null : sequence + 1;
+    const battleId = `battle-${sequence}`;
     this.battles.set(battleId, battle);
     return battleId;
   }

@@ -79,9 +79,9 @@ export class WorldCoordinator {
   private readonly challenges = new Map<ChallengeId, PendingRuntime>();
   private readonly waitingChallenges = new WaitingChallengeQueue();
   private readonly closedChallenges = new Set<ChallengeId>();
-  private readonly terminalUnsubscribers = new Map<BattleId, () => void>();
+  private readonly battleUnsubscribers = new Map<BattleId, () => void>();
   private operations: Promise<void> = Promise.resolve();
-  private nextChallengeSequence = 1;
+  private nextChallengeSequence: number | null = 1;
   private drainingWaitingChallenges = false;
   private disposed = false;
 
@@ -279,8 +279,8 @@ export class WorldCoordinator {
         this.finishChallenge(challengeId);
       }
       for (const [battleId, battle] of hostedBattles) {
-        this.terminalUnsubscribers.get(battleId)?.();
-        this.terminalUnsubscribers.delete(battleId);
+        this.battleUnsubscribers.get(battleId)?.();
+        this.battleUnsubscribers.delete(battleId);
         if (this.battles.get(battleId) !== battle) {
           throw new Error(`Preflighted battle ${battleId} changed during cancellation`);
         }
@@ -340,7 +340,7 @@ export class WorldCoordinator {
         return "battleLimitReached";
       }
 
-      const challengeId = `challenge-${this.nextChallengeSequence++}`;
+      const challengeId = this.allocateChallengeId();
       const initialRoster = [cell.playerId, requester.playerId];
       const startsCountdown = this.capacity.reserveRoster(challengeId, initialRoster);
       const waitingId = startsCountdown
@@ -551,8 +551,8 @@ export class WorldCoordinator {
     this.challenges.clear();
     this.waitingChallenges.clear();
     this.capacity.clear();
-    for (const unsubscribe of this.terminalUnsubscribers.values()) unsubscribe();
-    this.terminalUnsubscribers.clear();
+    for (const unsubscribe of this.battleUnsubscribers.values()) unsubscribe();
+    this.battleUnsubscribers.clear();
   }
 
   private async startExpiredChallenge(challengeId: ChallengeId): Promise<void> {
@@ -620,8 +620,8 @@ export class WorldCoordinator {
       );
     } catch (error) {
       if (battleId !== undefined) {
-        this.terminalUnsubscribers.get(battleId)?.();
-        this.terminalUnsubscribers.delete(battleId);
+        this.battleUnsubscribers.get(battleId)?.();
+        this.battleUnsubscribers.delete(battleId);
         await this.battles.remove(battleId);
       } else {
         await battle.dispose();
@@ -644,6 +644,17 @@ export class WorldCoordinator {
     this.waitingChallenges.remove(challengeId);
     this.capacity.releaseChallenge(challengeId);
     runtime.challenge.dispose();
+  }
+
+  private allocateChallengeId(): ChallengeId {
+    if (this.nextChallengeSequence === null) {
+      throw new RangeError("Challenge identifier space is exhausted");
+    }
+    const sequence = this.nextChallengeSequence;
+    this.nextChallengeSequence = sequence === Number.MAX_SAFE_INTEGER
+      ? null
+      : sequence + 1;
+    return `challenge-${sequence}`;
   }
 
   private replaceOpenChallengeCell(challenge: ChallengeRuntime): void {
@@ -711,12 +722,18 @@ export class WorldCoordinator {
 
   private registerBattle(battle: HostedBattle): BattleId {
     const battleId = this.battles.register(battle);
-    const unsubscribe = battle.onTerminal((result) => {
+    const unsubscribeTerminal = battle.onTerminal((result) => {
       void this.enqueue(
         async () => this.resolveBattle(battleId, battle, result),
       ).catch(() => undefined);
     });
-    this.terminalUnsubscribers.set(battleId, unsubscribe);
+    const unsubscribeCapacityRelease = battle.onCapacityReleased(() => {
+      void this.enqueue(() => this.drainWaitingChallenges()).catch(() => undefined);
+    });
+    this.battleUnsubscribers.set(battleId, () => {
+      unsubscribeTerminal();
+      unsubscribeCapacityRelease();
+    });
     return battleId;
   }
 
@@ -750,8 +767,8 @@ export class WorldCoordinator {
     for (const participant of battle.getRoster()) {
       this.players.get(participant.playerId)?.detachBattle(battleId, true);
     }
-    this.terminalUnsubscribers.get(battleId)?.();
-    this.terminalUnsubscribers.delete(battleId);
+    this.battleUnsubscribers.get(battleId)?.();
+    this.battleUnsubscribers.delete(battleId);
     await this.battles.remove(battleId);
     this.drainWaitingChallenges();
   }

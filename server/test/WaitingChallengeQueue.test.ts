@@ -15,3 +15,20 @@ test("allocates stable monotonic IDs and never reuses removed IDs", () => {
     { challengeId: "challenge-c", waitingId: 3 },
   ]);
 });
+
+test("allocates the last safe ID once and then reports exhaustion", () => {
+  const queue = new WaitingChallengeQueue();
+  (queue as unknown as { nextSequence: number | null }).nextSequence =
+    Number.MAX_SAFE_INTEGER;
+
+  assert.equal(queue.enqueue("challenge-last"), Number.MAX_SAFE_INTEGER);
+  assert.equal(queue.enqueue("challenge-last"), Number.MAX_SAFE_INTEGER);
+  assert.throws(
+    () => queue.enqueue("challenge-overflow"),
+    /identifier space is exhausted/,
+  );
+  assert.deepEqual(queue.entriesInOrder(), [{
+    challengeId: "challenge-last",
+    waitingId: Number.MAX_SAFE_INTEGER,
+  }]);
+});

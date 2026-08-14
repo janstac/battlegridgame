@@ -125,6 +125,67 @@ test("publishes terminal facts, stops ticking, and calls each terminal observer 
   assert.equal(lateCalls, 1);
 });
 
+test("notifies capacity observers once when an active participant withdraws", async () => {
+  const battle = new StandardBattleFactory().create(["alice", "bob", "carol"]);
+  let releases = 0;
+  const unsubscribe = battle.onCapacityReleased(() => { releases += 1; });
+
+  await battle.withdraw(0);
+  await battle.withdraw(0);
+  assert.equal(releases, 1);
+
+  unsubscribe();
+  await battle.withdraw(1);
+  assert.equal(releases, 1);
+  await battle.dispose();
+});
+
+test("notifies capacity observers when simulation eliminates a participant", async () => {
+  const clock = new ManualClock();
+  const cells: BattleCell[] = [
+    { kind: "occupied", participantId: 0, count: 1 },
+    { kind: "occupied", participantId: 1, count: 1 },
+    { kind: "empty" },
+    { kind: "occupied", participantId: 2, count: 1 },
+    { kind: "occupied", participantId: 3, count: 1 },
+  ];
+  const engine = BattleEngine.create({
+    participants: [0, 1, 2, 3].map((participantId) => ({
+      participantId,
+      status: "active" as const,
+    })),
+    grid: { width: 5, height: 1, cells },
+  }, {
+    ...DEFAULT_BATTLE_CONFIG,
+    splitDelayTicks: 1,
+  }, new FixedCooldownPolicy(0));
+  const battle = new HostedBattle(engine, [
+    { participantId: 0, playerId: "alice" },
+    { participantId: 1, playerId: "bob" },
+    { participantId: 2, playerId: "carol" },
+    { participantId: 3, playerId: "dave" },
+  ], { clock });
+  let releases = 0;
+  battle.onCapacityReleased(() => { releases += 1; });
+
+  await battle.receive(1, {
+    type: "incrementCell",
+    requestId: "schedule",
+    position: { x: 1, y: 0 },
+  }, () => undefined);
+  battle.start();
+  clock.runTick();
+  await battle.receive(1, {
+    type: "tickProbe",
+    probeId: "after-elimination",
+  }, () => undefined);
+
+  assert.equal(battle.getRoster()[1]?.status, "eliminated");
+  assert.equal(battle.snapshot.status.kind, "running");
+  assert.equal(releases, 1);
+  await battle.dispose();
+});
+
 test("withdrawn participants keep ownership and already queued cascades continue", async () => {
   const clock = new ManualClock();
   const cells: BattleCell[] = Array.from(
@@ -203,4 +264,19 @@ test("registry unregisters before disposal and can find a player's memberships",
   assert.equal(registry.get(secondId), undefined);
   assert.equal(await secondRemoval, true);
   assert.equal(await registry.remove(secondId), false);
+});
+
+test("registry allocates its last monotonic ID without wrapping", async () => {
+  const registry = new BattleRegistry();
+  (registry as unknown as { nextSequence: number | null }).nextSequence =
+    Number.MAX_SAFE_INTEGER;
+  const last = new StandardBattleFactory().create(["alice", "bob"]);
+  const overflow = new StandardBattleFactory().create(["carol", "dave"]);
+
+  assert.equal(registry.register(last), `battle-${Number.MAX_SAFE_INTEGER}`);
+  assert.throws(() => registry.register(overflow), /identifier space is exhausted/);
+  assert.equal(registry.entries().length, 1);
+
+  await registry.dispose();
+  await overflow.dispose();
 });

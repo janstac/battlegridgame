@@ -38,6 +38,7 @@ export type HostedBattleTerminalResult = Readonly<{
 }>;
 
 type HostedBattleTerminalListener = (result: HostedBattleTerminalResult) => void;
+type HostedBattleCapacityReleaseListener = () => void;
 
 /** Serialized, transport-free runtime for one authoritative battle. */
 export class HostedBattle {
@@ -49,6 +50,8 @@ export class HostedBattle {
   private readonly hostedWorldPosition: Position | null;
   private readonly listeners = new Set<(message: ServerMessage) => void>();
   private readonly terminalListeners = new Set<HostedBattleTerminalListener>();
+  private readonly capacityReleaseListeners =
+    new Set<HostedBattleCapacityReleaseListener>();
   private operations: Promise<void> = Promise.resolve();
   private timer: unknown | null = null;
   private terminalResult: HostedBattleTerminalResult | undefined;
@@ -164,6 +167,18 @@ export class HostedBattle {
     };
   }
 
+  /** Observes a roster member changing from active to withdrawn or eliminated. */
+  onCapacityReleased(listener: HostedBattleCapacityReleaseListener): () => void {
+    this.assertOpen();
+    this.capacityReleaseListeners.add(listener);
+    let subscribed = true;
+    return () => {
+      if (!subscribed) return;
+      subscribed = false;
+      this.capacityReleaseListeners.delete(listener);
+    };
+  }
+
   start(): void {
     this.assertOpen();
     if (this.engine.status.kind === "finished") {
@@ -215,6 +230,7 @@ export class HostedBattle {
     this.stop();
     this.listeners.clear();
     this.terminalListeners.clear();
+    this.capacityReleaseListeners.clear();
     await this.operations;
   }
 
@@ -229,6 +245,13 @@ export class HostedBattle {
     tick: number,
   ): void {
     for (const event of events) this.broadcastEvent(event, tick);
+    if (events.some((event) =>
+      event.kind === "participantStatusChanged" && event.status !== "active"
+    )) {
+      for (const listener of [...this.capacityReleaseListeners]) {
+        try { listener(); } catch { /* Capacity observers cannot corrupt simulation. */ }
+      }
+    }
   }
 
   private broadcastEvent(event: Parameters<typeof battleEventToServerMessages>[0], tick: number): void {

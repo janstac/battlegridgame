@@ -551,3 +551,62 @@ test("active battle leaves release slots for nonconflicting Waiting rosters", as
   await second.connection.receive({ type: "leaveBattle", battleId: "battle-1" });
   assert.equal(app.world.cellAt({ x: 2, y: 0 }).kind, "challengePending");
 });
+
+test("battle status changes promote Waiting even outside coordinator leave", async (t) => {
+  const app = await harness(true, 1);
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const defender = await app.connect();
+  const second = await app.connect();
+  const third = await app.connect();
+  const fourth = await app.connect();
+  const challenger = await app.connect();
+  await app.coordinator.createDebugBattle(defender.connection, [
+    defender.connection.playerId,
+    second.connection.playerId,
+    third.connection.playerId,
+    fourth.connection.playerId,
+  ]);
+  await challenger.connection.receive({
+    type: "challengeWorldCell", requestId: "waiting", position: { x: 0, y: 0 },
+  });
+  assert.equal(app.world.cellAt({ x: 0, y: 0 }).kind, "challengeWaiting");
+
+  const battle = app.battles.get("battle-1");
+  assert.notEqual(battle, undefined);
+  const participantId = battle?.participantIdForPlayer(defender.connection.playerId);
+  assert.notEqual(participantId, undefined);
+  if (battle === undefined || participantId === undefined) return;
+  await battle.withdraw(participantId);
+  assert.equal(battle.snapshot.status.kind, "running");
+  await app.coordinator.adminGetWorld();
+
+  assert.equal(app.world.cellAt({ x: 0, y: 0 }).kind, "challengePending");
+});
+
+test("challenge identifiers stop at the safe integer boundary without mutation", async (t) => {
+  const app = await harness();
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const first = await app.connect();
+  await app.connect();
+  const third = await app.connect();
+  await app.connect();
+  (app.coordinator as unknown as { nextChallengeSequence: number | null })
+    .nextChallengeSequence = Number.MAX_SAFE_INTEGER;
+
+  assert.equal(
+    await app.coordinator.challengeWorldCell(first.connection, { x: 2, y: 0 }),
+    null,
+  );
+  const last = app.world.cellAt({ x: 2, y: 0 });
+  assert.equal(
+    last.kind === "challengePending" ? last.challengeId : null,
+    `challenge-${Number.MAX_SAFE_INTEGER}`,
+  );
+  const untouched = app.world.cellAt({ x: 6, y: 0 });
+
+  await assert.rejects(
+    app.coordinator.challengeWorldCell(third.connection, { x: 6, y: 0 }),
+    /identifier space is exhausted/,
+  );
+  assert.deepEqual(app.world.cellAt({ x: 6, y: 0 }), untouched);
+});
