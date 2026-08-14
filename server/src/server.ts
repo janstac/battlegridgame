@@ -4,7 +4,10 @@ import { PlayerDirectory } from "./application/PlayerDirectory.ts";
 import { BattleRegistry } from "./game/BattleRegistry.ts";
 import { StandardBattleFactory } from "./game/StandardBattleFactory.ts";
 import type { HostedBattleClock } from "./game/HostedBattle.ts";
-import { BattleWebSocketGateway } from "./network/BattleWebSocketGateway.ts";
+import {
+  BattleWebSocketGateway,
+  type AdminMessageHandler,
+} from "./network/BattleWebSocketGateway.ts";
 import type { PendingChallengeClock } from "./world/PendingChallenge.ts";
 import { World, type RandomSource } from "./world/World.ts";
 
@@ -15,6 +18,7 @@ export type GridGameServerOptions = Readonly<{
   challengeClock?: PendingChallengeClock;
   challengeDurationMs?: number;
   worldRandom?: RandomSource;
+  adminMessageHandler?: AdminMessageHandler;
 }>;
 
 export type GridGameServer = Readonly<{
@@ -48,7 +52,12 @@ export function createGridGameServer(options: GridGameServerOptions = {}): GridG
       ...(options.challengeDurationMs === undefined ? {} : { challengeDurationMs: options.challengeDurationMs }),
     },
   );
-  const gateway = new BattleWebSocketGateway(httpServer, players, coordinator);
+  const gateway = new BattleWebSocketGateway(
+    httpServer,
+    players,
+    coordinator,
+    options.adminMessageHandler,
+  );
   return {
     httpServer,
     players,
