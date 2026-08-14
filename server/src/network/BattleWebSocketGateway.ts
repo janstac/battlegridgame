@@ -1,8 +1,12 @@
 import type { Server as HttpServer, IncomingMessage } from "node:http";
 import {
+  parseAdminConnectionServerMessage,
   parseAdminNetworkClientMessage,
+  parseAdminNetworkServerMessage,
   parseAnonymousNetworkClientMessage,
   parseNetworkClientMessage,
+  parseNetworkServerMessage,
+  type AdminConnectionServerMessage,
   type AdminNetworkClientMessage,
   type AdminNetworkServerMessage,
   type NetworkServerMessage,
@@ -105,11 +109,11 @@ export class BattleWebSocketGateway {
             return;
           }
           this.sessions.set(socket, { role: "admin", operations: Promise.resolve() });
-          this.send(socket, { type: "connectedAsAdmin" });
+          this.sendAdminConnection(socket, { type: "connectedAsAdmin" });
           return;
         }
 
-        const output = (outbound: NetworkServerMessage) => this.send(socket, outbound);
+        const output = (outbound: NetworkServerMessage) => this.sendPlayer(socket, outbound);
         const connection = this.players.register((playerId) => new ClientConnection(
           playerId,
           this.coordinator,
@@ -131,7 +135,7 @@ export class BattleWebSocketGateway {
       }
       case "admin": {
         const message = parseAdminNetworkClientMessage(value);
-        const output: AdminMessageOutput = (outbound) => this.send(socket, outbound);
+        const output: AdminMessageOutput = (outbound) => this.sendAdminMessage(socket, outbound);
         const next = session.operations.then(() => this.handleAdminMessage(message, output));
         session.operations = next.catch(() => undefined);
         void next.catch(() => socket.close(1011, "server error"));
@@ -140,7 +144,22 @@ export class BattleWebSocketGateway {
     }
   }
 
-  private send(socket: WebSocket, message: object): void {
+  private sendPlayer(socket: WebSocket, message: NetworkServerMessage): void {
+    this.write(socket, parseNetworkServerMessage(message));
+  }
+
+  private sendAdminConnection(
+    socket: WebSocket,
+    message: AdminConnectionServerMessage,
+  ): void {
+    this.write(socket, parseAdminConnectionServerMessage(message));
+  }
+
+  private sendAdminMessage(socket: WebSocket, message: AdminNetworkServerMessage): void {
+    this.write(socket, parseAdminNetworkServerMessage(message));
+  }
+
+  private write(socket: WebSocket, message: object): void {
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
   }
 

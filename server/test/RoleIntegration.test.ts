@@ -172,6 +172,38 @@ test("authenticated admin messages use the typed async handler", async (t) => {
   assert.deepEqual(received, ["adminListPlayers"]);
 });
 
+test("gateway rejects malformed admin handler output before serialization", async (t) => {
+  const app = await startServer(t, {
+    adminMessageHandler: (message, output) => {
+      // Variables with extra fields are structurally assignable in TypeScript;
+      // the gateway's runtime TypeBox parser must reject this before writing it.
+      const malformed = {
+        type: "adminPlayers" as const,
+        requestId: message.requestId,
+        playerIds: [],
+        extra: true,
+      };
+      output(malformed);
+    },
+  });
+  const admin = await app.connect();
+  admin.send({ type: "connectAsAdmin", token: ADMIN_TOKEN });
+  assert.equal(
+    (await admin.next() as AdminConnectionServerMessage).type,
+    "connectedAsAdmin",
+  );
+
+  let receivedFrame = false;
+  admin.socket.once("message", () => { receivedFrame = true; });
+  const closed = admin.closeResult();
+  admin.send({ type: "adminListPlayers", requestId: "list-1" });
+  const result = await closed;
+
+  assert.equal(result.code, 1011);
+  assert.equal(result.reason, "server error");
+  assert.equal(receivedFrame, false);
+});
+
 type RejectionCase = Readonly<{
   name: string;
   authenticate?: "player" | "admin";
