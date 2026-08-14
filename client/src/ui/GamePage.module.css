@@ -9,6 +9,11 @@
   padding-block: clamp(1rem, 2.5vw, 2rem);
 }
 
+.fullWidth {
+  width: calc(100% - 2rem);
+  padding-block: 1rem 0;
+}
+
 .themeControl {
   display: flex;
   justify-content: flex-end;
@@ -53,5 +58,10 @@
   .wide {
     width: calc(100% - 1rem);
     padding-top: 0.75rem;
+  }
+
+  .fullWidth {
+    width: calc(100% - 1rem);
+    padding-top: .5rem;
   }
 }

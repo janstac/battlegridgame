@@ -6,6 +6,7 @@ import styles from "./GamePage.module.css";
 type GamePageSharedProps = {
   children: ReactNode;
   wide?: boolean;
+  fullWidth?: boolean;
 };
 
 type GamePageHeaderProps =
@@ -26,7 +27,11 @@ export type GamePageProps = Readonly<GamePageSharedProps & GamePageHeaderProps>;
 
 /** Shared page frame for each game mode. */
 export function GamePage(props: GamePageProps) {
-  const pageClassName = [styles.page, props.wide ? styles.wide : undefined]
+  const pageClassName = [
+    styles.page,
+    props.wide ? styles.wide : undefined,
+    props.fullWidth ? styles.fullWidth : undefined,
+  ]
     .filter(Boolean)
     .join(" ");
   return (

@@ -145,6 +145,7 @@ export function WorldViewport({ children }: WorldViewportProps) {
   }));
 
   const onWheel = (event: WheelEvent<HTMLDivElement>) => {
+    if (!event.ctrlKey && !event.metaKey) return;
     event.preventDefault();
     const bounds = event.currentTarget.getBoundingClientRect();
     setCamera((current) => {
@@ -201,7 +202,7 @@ export function WorldViewport({ children }: WorldViewportProps) {
         >
           {projection === null ? null : children}
         </div>
-        <p className={styles.hint}>Drag to pan. Scroll or pinch to zoom.</p>
+        <p className={styles.hint}>Drag to pan. Pinch or Ctrl/⌘ + scroll to zoom.</p>
       </section>
     </WorldViewportContext.Provider>
   );

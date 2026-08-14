@@ -1,7 +1,7 @@
 .shell { position: relative; }
 .viewport {
   position: relative;
-  height: clamp(24rem, calc(100dvh - 12rem), 62rem);
+  height: var(--world-size, clamp(24rem, calc(100dvh - 12rem), 62rem));
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-panel);

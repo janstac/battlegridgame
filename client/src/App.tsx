@@ -16,7 +16,7 @@ export function App() {
     return <LocalGame onBack={() => setMode(null)} />;
   }
   if (mode === "network") {
-    return <NetworkGame onBack={() => setMode(null)} />;
+    return <NetworkGame />;
   }
 
   return (

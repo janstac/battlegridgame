@@ -1,16 +1,33 @@
-.reconnectAction, .backAction { margin-top: 1rem; }
-.backAction { display: block; }
-.tabs { display: flex; gap: .45rem; margin-bottom: 1rem; }
-.tabs button {
-  padding: .65rem 1rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-medium);
-  color: var(--color-text-secondary);
-  background: var(--color-surface-muted);
-  cursor: pointer;
+.reconnectAction { margin-top: 1rem; }
+.surface {
+  --world-size: min(42rem, 46vw, calc(100dvh - 7rem));
+  --battle-lane-size: calc(100vw - var(--world-size) - 3.5rem);
+  --layout-gap: 1rem;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--layout-gap);
+  width: 100%;
+  height: calc(100dvh - 5.25rem);
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
-.tabs button[aria-current="page"] { color: var(--color-text-primary); border-color: var(--color-accent); background: var(--color-surface-active); }
-.tabs span { margin-left: .3rem; padding: .08rem .38rem; border-radius: var(--radius-pill); background: var(--color-surface-deep); }
+.worldPanel {
+  position: sticky;
+  z-index: 3;
+  inset-inline-start: 0;
+  flex: 0 0 var(--world-size);
+  min-width: 0;
+  padding: .25rem;
+  background: var(--color-page-background);
+  pointer-events: auto;
+}
+.battleTrack {
+  flex: 0 0 auto;
+  min-width: calc(100% - var(--world-size) - var(--layout-gap));
+  padding: .25rem .25rem .75rem 0;
+}
 .worldLayout { min-width: 0; }
 .worldDetail {
   display: grid;
@@ -31,12 +48,23 @@
 .roster { display: grid; gap: .35rem; }
 .roster span { display: flex; align-items: center; gap: .4rem; color: var(--color-text-primary); font-size: .82rem; }
 .roster i { width: .65rem; height: .65rem; border-radius: 50%; }
-.battlesLayout { display: flex; align-items: flex-start; gap: 1rem; }
-.workspaceWrap { flex: 1; min-width: 0; }
-@media (max-width: 48rem) {
-  .battlesLayout { flex-direction: column; }
-}
-
 @media (orientation: portrait) {
-  .battlesLayout { flex-direction: column; }
+  .surface {
+    --world-size: min(42rem, calc(100vw - 1.5rem), 46dvh);
+    --battle-lane-size: calc(100vw - 2rem);
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .worldPanel {
+    inset-block-start: 0;
+    inset-inline-start: auto;
+    flex-basis: auto;
+    width: 100%;
+  }
+  .battleTrack {
+    width: 100%;
+    min-width: 0;
+    min-height: calc(100% - var(--world-size));
+    padding: 0 .25rem .75rem;
+  }
 }

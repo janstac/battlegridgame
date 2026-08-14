@@ -27,7 +27,6 @@ import type { PlayerColorId } from "../view/index.ts";
 import {
   WorldCellPopup,
   WorldGridView,
-  WorldMiniViewer,
   WorldViewport,
   worldPlayerColor,
 } from "../world/index.ts";
@@ -37,10 +36,6 @@ type ConnectionState =
   | { kind: "connecting" }
   | { kind: "ready"; client: NetworkClient }
   | { kind: "error"; message: string };
-
-type ActiveScreen = "world" | "battles";
-
-export type NetworkGameProps = Readonly<{ onBack(): void }>;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "An unexpected network error occurred.";
@@ -132,11 +127,21 @@ function WorldDetail({
   );
 }
 
-function WorldScreen({
+function NetworkViewer({
   world,
   localPlayerId,
+  battles,
+  order,
   now,
-}: Readonly<{ world: NetworkClient["world"]; localPlayerId: PlayerId; now: number }>) {
+  onMove,
+}: Readonly<{
+  world: NetworkClient["world"];
+  localPlayerId: PlayerId;
+  battles: ReadonlyMap<BattleId, BattleTileModel>;
+  order: readonly BattleId[];
+  now: number;
+  onMove(battleId: BattleId, direction: -1 | 1): void;
+}>) {
   const state = useWorldState(world.state);
   const [selected, setSelected] = useState<Position | null>(null);
   const [busy, setBusy] = useState(false);
@@ -154,63 +159,40 @@ function WorldScreen({
     void command().catch((caught: unknown) => setError(errorMessage(caught))).finally(() => setBusy(false));
   };
   return (
-    <section>
-      {state.resyncing && <StatusNotice kind="progress">Resynchronizing the World…</StatusNotice>}
-      {error !== null && <StatusNotice kind="error">{error}</StatusNotice>}
-      <div className={styles.worldLayout}>
-        <WorldViewport>
-          <WorldGridView
-            snapshot={snapshot}
-            localPlayerId={localPlayerId}
-            now={now}
-            interactive
-            selectedPosition={selected}
-            onCellActivate={setSelected}
-          />
-          {selected !== null && selectedCell !== null && (
-            <WorldCellPopup
-              position={selected}
-              gridWidth={snapshot.grid.width}
-              gridHeight={snapshot.grid.height}
-            >
-              <WorldDetail
-                cell={selectedCell}
-                localPlayerId={localPlayerId}
-                busy={busy}
-                onChallenge={() => run(() => world.challengeCell(selected))}
-                onJoin={(challengeId) => run(() => world.joinChallenge(challengeId))}
-                onLeave={(challengeId) => run(() => world.leaveChallenge(challengeId))}
-              />
-            </WorldCellPopup>
-          )}
-        </WorldViewport>
-      </div>
-    </section>
-  );
-}
-
-function BattlesScreen({
-  client,
-  battles,
-  order,
-  now,
-  onOpenWorld,
-  onMove,
-}: Readonly<{
-  client: NetworkClient;
-  battles: ReadonlyMap<BattleId, BattleTileModel>;
-  order: readonly BattleId[];
-  now: number;
-  onOpenWorld(): void;
-  onMove(battleId: BattleId, direction: -1 | 1): void;
-}>) {
-  const world = useWorldState(client.world.state);
-  return (
-    <div className={styles.battlesLayout}>
-      {world.snapshot !== null && (
-        <WorldMiniViewer snapshot={world.snapshot} localPlayerId={client.playerId} now={now} onOpen={onOpenWorld} />
-      )}
-      <div className={styles.workspaceWrap}>
+    <div className={styles.surface}>
+      <section className={styles.worldPanel}>
+        {state.resyncing && <StatusNotice kind="progress">Resynchronizing the World…</StatusNotice>}
+        {error !== null && <StatusNotice kind="error">{error}</StatusNotice>}
+        <div className={styles.worldLayout}>
+          <WorldViewport>
+            <WorldGridView
+              snapshot={snapshot}
+              localPlayerId={localPlayerId}
+              now={now}
+              interactive
+              selectedPosition={selected}
+              onCellActivate={setSelected}
+            />
+            {selected !== null && selectedCell !== null && (
+              <WorldCellPopup
+                position={selected}
+                gridWidth={snapshot.grid.width}
+                gridHeight={snapshot.grid.height}
+              >
+                <WorldDetail
+                  cell={selectedCell}
+                  localPlayerId={localPlayerId}
+                  busy={busy}
+                  onChallenge={() => run(() => world.challengeCell(selected))}
+                  onJoin={(challengeId) => run(() => world.joinChallenge(challengeId))}
+                  onLeave={(challengeId) => run(() => world.leaveChallenge(challengeId))}
+                />
+              </WorldCellPopup>
+            )}
+          </WorldViewport>
+        </div>
+      </section>
+      <div className={styles.battleTrack}>
         <BattleWorkspace
           battles={battles}
           order={order}
@@ -226,9 +208,8 @@ function BattlesScreen({
 }
 
 /** Owns the World projection and every battle joined through one connection. */
-export function NetworkGame({ onBack }: NetworkGameProps) {
+export function NetworkGame() {
   const [connection, setConnection] = useState<ConnectionState>({ kind: "connecting" });
-  const [activeScreen, setActiveScreen] = useState<ActiveScreen>("world");
   const [battles, setBattles] = useState<ReadonlyMap<BattleId, BattleTileModel>>(new Map());
   const [battleOrder, setBattleOrder] = useState<readonly BattleId[]>([]);
   const [now, setNow] = useState(Date.now());
@@ -311,7 +292,7 @@ export function NetworkGame({ onBack }: NetworkGameProps) {
 
   const ready = connection.kind === "ready" ? connection.client : null;
   return (
-    <GamePage header={false} wide>
+    <GamePage header={false} fullWidth>
       {connection.kind === "connecting" && <StatusNotice kind="progress">Connecting to the game server…</StatusNotice>}
       {connection.kind === "error" && (
         <div>
@@ -320,28 +301,15 @@ export function NetworkGame({ onBack }: NetworkGameProps) {
         </div>
       )}
       {ready !== null && (
-        <>
-          <nav className={styles.tabs} aria-label="Network game views">
-            <button type="button" aria-current={activeScreen === "world" ? "page" : undefined} onClick={() => setActiveScreen("world")}>World</button>
-            <button type="button" aria-current={activeScreen === "battles" ? "page" : undefined} onClick={() => setActiveScreen("battles")}>
-              Battles <span>{battles.size}</span>
-            </button>
-          </nav>
-          {activeScreen === "world" ? (
-            <WorldScreen world={ready.world} localPlayerId={ready.playerId} now={now} />
-          ) : (
-            <BattlesScreen
-              client={ready}
-              battles={battles}
-              order={battleOrder}
-              now={now}
-              onOpenWorld={() => setActiveScreen("world")}
-              onMove={(battleId, direction) => setBattleOrder((current) => moveBattle(current, battleId, direction))}
-            />
-          )}
-        </>
+        <NetworkViewer
+          world={ready.world}
+          localPlayerId={ready.playerId}
+          battles={battles}
+          order={battleOrder}
+          now={now}
+          onMove={(battleId, direction) => setBattleOrder((current) => moveBattle(current, battleId, direction))}
+        />
       )}
-      <ActionButton className={styles.backAction} variant="secondary" type="button" onClick={onBack}>Back to game modes</ActionButton>
     </GamePage>
   );
 }

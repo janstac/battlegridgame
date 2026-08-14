@@ -2,18 +2,15 @@
   display: flex;
   align-items: start;
   gap: .75rem;
-  max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
+  width: max-content;
+  min-width: 100%;
   padding: .15rem .15rem .65rem;
-  scroll-snap-type: x proximity;
 }
 .tile {
-  flex: 0 0 min(46rem, calc(100vw - 16rem), calc(100dvh - 10rem));
+  flex: 0 0 min(46rem, var(--battle-lane-size, calc(100vw - 2rem)), calc(100dvh - 6rem));
   min-width: 0;
   border-radius: var(--radius-panel);
   background: var(--color-surface-deep);
-  scroll-snap-align: start;
 }
 .tileActions {
   display: flex;
@@ -42,11 +39,8 @@
 @media (orientation: portrait) {
   .workspace {
     flex-direction: column;
-    max-height: calc(100dvh - 10rem);
-    overflow-x: hidden;
-    overflow-y: auto;
+    width: 100%;
     padding: .15rem .65rem .15rem .15rem;
-    scroll-snap-type: y proximity;
   }
 
   .tile {
