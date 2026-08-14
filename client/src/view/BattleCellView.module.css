@@ -41,6 +41,7 @@
 
 .count {
   fill: var(--player-color);
+  font-family: "Noto Serif Variable", ui-serif, Georgia, serif;
   font-size: 0.43px;
   font-weight: 800;
   pointer-events: none;
