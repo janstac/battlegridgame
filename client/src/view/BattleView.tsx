@@ -25,11 +25,11 @@ export function BattleView({
 }: BattleViewProps) {
   const state = useClientBattleState(battle);
   const snapshot = state.battle;
-  const cooldown = snapshot.cooldowns.find(
+  const localCooldown = snapshot.cooldowns.find(
     (entry) => entry.participantId === state.localParticipantId,
   );
-  const { remainingTicks: cooldownTicks, ratio: cooldownRatio } = cooldownProgress(
-    cooldown,
+  const { remainingTicks: cooldownTicks } = cooldownProgress(
+    localCooldown,
     state.estimatedTick,
   );
   const localPlayerOnCooldown = cooldownTicks > 0;
@@ -45,25 +45,18 @@ export function BattleView({
 
   return (
     <section className={styles.panel}>
-      <div
-        className={`${styles.cooldown} ${localPlayerOnCooldown ? "" : styles.cooldownReady}`}
-        role="progressbar"
-        aria-label="Action cooldown"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(cooldownRatio * 100)}
-        aria-valuetext={localPlayerOnCooldown ? `${cooldownTicks} ticks remaining` : "Ready"}
-        style={{ "--cooldown-progress": cooldownRatio } as CSSProperties}
-      >
-        <span className={styles.cooldownFill} />
-      </div>
-
       <div className={styles.playerLegend}>
         {snapshot.participants.map(({ participantId, status }) => {
           const playerColorId = participantColorIds.get(participantId);
           if (playerColorId === undefined) {
             throw new Error(`Missing color ID for participant ${participantId}`);
           }
+          const participantLabel = participantLabels?.get(participantId)
+            ?? `Player ${participantId + 1}`;
+          const { remainingTicks, ratio } = cooldownProgress(
+            snapshot.cooldowns.find((entry) => entry.participantId === participantId),
+            state.estimatedTick,
+          );
           return (
             <span
               className={`${styles.player} ${playerColorClassName(playerColorId)} ${
@@ -71,8 +64,19 @@ export function BattleView({
               }`}
               key={participantId}
             >
-              <span className={styles.swatch} aria-hidden="true" />
-              {participantLabels?.get(participantId) ?? `Player ${participantId + 1}`}
+              <span
+                className={styles.cooldownRing}
+                role="progressbar"
+                aria-label={`${participantLabel} action cooldown`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(ratio * 100)}
+                aria-valuetext={remainingTicks > 0 ? `${remainingTicks} ticks remaining` : "Ready"}
+                style={{ "--cooldown-progress": ratio } as CSSProperties}
+              >
+                <span className={styles.swatch} aria-hidden="true" />
+              </span>
+              {participantLabel}
               {status === "active" ? "" : ` (${status})`}
             </span>
           );

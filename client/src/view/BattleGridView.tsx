@@ -68,6 +68,7 @@ export function BattleGridView({
             {renderCell(cell, {
               canActivate,
               hasPendingSplit: pendingIndexes.has(index),
+              localParticipantId,
               onActivate: () => onCellActivate(position),
               participantColorIds,
             })}
@@ -81,6 +82,7 @@ export function BattleGridView({
 type CellRenderContext = Readonly<{
   canActivate: boolean;
   hasPendingSplit: boolean;
+  localParticipantId: BattleParticipantId;
   onActivate(): void;
   participantColorIds: ReadonlyMap<BattleParticipantId, PlayerColorId>;
 }>;
@@ -102,6 +104,7 @@ function renderCell(cell: BattleCell, context: CellRenderContext) {
           playerColorId={playerColorId}
           canActivate={context.canActivate}
           hasPendingSplit={context.hasPendingSplit}
+          isLocallyOwned={cell.participantId === context.localParticipantId}
           onActivate={context.onActivate}
         />
       );

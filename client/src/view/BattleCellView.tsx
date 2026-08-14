@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import {
   PENDING_SYMBOL_ID,
@@ -45,6 +45,7 @@ export type OccupiedCellViewProps = Readonly<{
   playerColorId: PlayerColorId;
   canActivate: boolean;
   hasPendingSplit: boolean;
+  isLocallyOwned: boolean;
   onActivate(): void;
 }>;
 
@@ -54,8 +55,17 @@ export function OccupiedCellView({
   playerColorId,
   canActivate,
   hasPendingSplit,
+  isLocallyOwned,
   onActivate,
 }: OccupiedCellViewProps) {
+  const previousCount = useRef(count);
+  const [countAnimationSequence, setCountAnimationSequence] = useState(0);
+  useLayoutEffect(() => {
+    if (previousCount.current === count) return;
+    previousCount.current = count;
+    setCountAnimationSequence((sequence) => sequence + 1);
+  }, [count]);
+
   const handleKeyDown = (event: KeyboardEvent<SVGRectElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -77,7 +87,12 @@ export function OccupiedCellView({
         onKeyDown={handleKeyDown}
       />
       <text
-        className={styles.count}
+        className={[
+          styles.count,
+          isLocallyOwned ? styles.localCount : "",
+          countAnimationSequence > 0 ? styles.countChanged : "",
+        ].filter(Boolean).join(" ")}
+        key={countAnimationSequence}
         x="0.5"
         y="0.53"
         textAnchor="middle"
