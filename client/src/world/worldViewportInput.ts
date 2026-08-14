@@ -15,6 +15,30 @@ export type WorldWheelBounds = Readonly<{
   top: number;
 }>;
 
+export type WorldPointerContact = Readonly<{
+  buttons: number;
+  pointerType: string;
+}>;
+
+/** Rejects a stale mouse move after its primary-button contact ended off-viewer. */
+export function isWorldPointerContactActive(contact: WorldPointerContact): boolean {
+  return contact.pointerType !== "mouse" || (contact.buttons & 1) !== 0;
+}
+
+/** Finishes tracked contacts even when an uncaptured pointer is released off-viewer. */
+export function addWorldPointerTerminationListener(
+  target: EventTarget,
+  listener: (pointerId: number) => void,
+): () => void {
+  const handleTermination = (event: Event) => listener((event as PointerEvent).pointerId);
+  target.addEventListener("pointerup", handleTermination);
+  target.addEventListener("pointercancel", handleTermination);
+  return () => {
+    target.removeEventListener("pointerup", handleTermination);
+    target.removeEventListener("pointercancel", handleTermination);
+  };
+}
+
 /** Converts browser wheel units to the pixel scale used by viewport zoom. */
 export function normalizeWorldWheelDelta(
   deltaY: number,

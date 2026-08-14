@@ -3,11 +3,21 @@ import test from "node:test";
 
 import { MAX_WORLD_SCALE, MIN_WORLD_SCALE } from "../src/world/viewportMath.ts";
 import {
+  addWorldPointerTerminationListener,
   addWorldWheelListener,
+  isWorldPointerContactActive,
   normalizeWorldWheelDelta,
   worldWheelTransform,
   worldWheelZoomFactor,
 } from "../src/world/worldViewportInput.ts";
+
+test("world pointer tracking discards a mouse released outside the viewer", () => {
+  assert.equal(isWorldPointerContactActive({ pointerType: "mouse", buttons: 1 }), true);
+  assert.equal(isWorldPointerContactActive({ pointerType: "mouse", buttons: 0 }), false);
+  assert.equal(isWorldPointerContactActive({ pointerType: "mouse", buttons: 2 }), false);
+  assert.equal(isWorldPointerContactActive({ pointerType: "touch", buttons: 0 }), true);
+  assert.equal(isWorldPointerContactActive({ pointerType: "pen", buttons: 0 }), true);
+});
 
 class RecordingWheelTarget {
   readonly additions: Array<{
@@ -42,6 +52,26 @@ function invokeListener(listener: EventListenerOrEventListenerObject, event: Eve
   if (typeof listener === "function") listener(event);
   else listener.handleEvent(event);
 }
+
+test("world pointer termination follows contacts released outside the viewer", () => {
+  const target = new RecordingWheelTarget();
+  const finished: number[] = [];
+  const cleanup = addWorldPointerTerminationListener(
+    target as unknown as EventTarget,
+    (pointerId) => finished.push(pointerId),
+  );
+
+  assert.deepEqual(target.additions.map(({ type }) => type), ["pointerup", "pointercancel"]);
+  for (const [index, addition] of target.additions.entries()) {
+    invokeListener(addition.listener, { pointerId: index + 3 } as unknown as Event);
+  }
+  assert.deepEqual(finished, [3, 4]);
+
+  cleanup();
+  assert.deepEqual(target.removals.map(({ type }) => type), ["pointerup", "pointercancel"]);
+  assert.strictEqual(target.removals[0]?.listener, target.additions[0]?.listener);
+  assert.strictEqual(target.removals[1]?.listener, target.additions[1]?.listener);
+});
 
 test("world wheel deltas preserve the existing pixel, line, and page scaling", () => {
   assert.equal(normalizeWorldWheelDelta(12, 0, 480), 12);

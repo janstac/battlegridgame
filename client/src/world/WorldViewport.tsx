@@ -14,7 +14,12 @@ import {
   type ViewportTransform,
 } from "./viewportMath.ts";
 import styles from "./WorldViewport.module.css";
-import { addWorldWheelListener, worldWheelTransform } from "./worldViewportInput.ts";
+import {
+  addWorldPointerTerminationListener,
+  addWorldWheelListener,
+  isWorldPointerContactActive,
+  worldWheelTransform,
+} from "./worldViewportInput.ts";
 
 export const WORLD_CONTENT_SIZE = { width: 640, height: 640 } as const;
 const DRAG_THRESHOLD = 6;
@@ -99,8 +104,21 @@ export function WorldViewport({ children }: WorldViewportProps) {
     gestureStartRef.current = gestureRef.current?.centroid ?? null;
   };
 
+  const finishPointer = (pointerId: number) => {
+    pointersRef.current.delete(pointerId);
+    refreshGesture();
+    gestureStartRef.current = gestureRef.current?.centroid ?? null;
+    if (pointersRef.current.size === 0) draggingRef.current = false;
+  };
+
+  useEffect(() => addWorldPointerTerminationListener(window, finishPointer), []);
+
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!pointersRef.current.has(event.pointerId)) return;
+    if (!isWorldPointerContactActive(event)) {
+      finishPointer(event.pointerId);
+      return;
+    }
     pointersRef.current.set(event.pointerId, pointerPoint(event));
     const prior = gestureRef.current;
     const points = [...pointersRef.current.values()];
@@ -146,13 +164,6 @@ export function WorldViewport({ children }: WorldViewportProps) {
     };
   };
 
-  const finishPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
-    pointersRef.current.delete(event.pointerId);
-    refreshGesture();
-    gestureStartRef.current = gestureRef.current?.centroid ?? null;
-    if (pointersRef.current.size === 0) draggingRef.current = false;
-  };
-
   const zoomAtCenter = (factor: number) => setCamera((current) => current === null ? current : ({
     ...current,
     transform: zoomTransform(
@@ -183,9 +194,9 @@ export function WorldViewport({ children }: WorldViewportProps) {
           className={styles.viewport}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
-          onPointerUp={finishPointer}
-          onPointerCancel={finishPointer}
-          onLostPointerCapture={finishPointer}
+          onPointerUp={(event) => finishPointer(event.pointerId)}
+          onPointerCancel={(event) => finishPointer(event.pointerId)}
+          onLostPointerCapture={(event) => finishPointer(event.pointerId)}
           onClickCapture={(event) => {
             if (movedRef.current) {
               event.preventDefault();
