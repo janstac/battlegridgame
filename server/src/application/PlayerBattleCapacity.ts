@@ -56,6 +56,17 @@ export class PlayerBattleCapacity {
       && playerIds.every((playerId) => this.hasCapacity(playerId));
   }
 
+  /** Confirms a countdown owns every slot needed for atomic battle conversion. */
+  hasReservationsForRoster(
+    challengeId: ChallengeId,
+    playerIds: readonly PlayerId[],
+  ): boolean {
+    const reserved = this.reservations.get(challengeId);
+    return reserved !== undefined
+      && new Set(playerIds).size === playerIds.length
+      && playerIds.every((playerId) => reserved.has(playerId));
+  }
+
   reserveRoster(challengeId: ChallengeId, playerIds: readonly PlayerId[]): boolean {
     if (this.reservations.has(challengeId)) {
       throw new Error(`Challenge ${challengeId} already owns capacity reservations`);

@@ -155,6 +155,12 @@ export class WorldCoordinator {
           message: "Every battle participant must be connected",
         };
       }
+      if (!this.capacity.canReserveRoster(playerIds)) {
+        return adminFailure(
+          "battleLimitReached",
+          "One or more battle participants have reached the concurrent battle limit",
+        );
+      }
 
       const battle = this.factory.create(playerIds);
       const battleId = this.registerBattle(battle);
@@ -219,14 +225,15 @@ export class WorldCoordinator {
         inspected.push({ change, actual });
       }
 
-      const pendingChallenges = new Map<ChallengeId, PendingRuntime>();
+      const lifecycleChallenges = new Map<ChallengeId, PendingRuntime>();
       const hostedBattles = new Map<BattleId, HostedBattle>();
       for (const { change, actual } of inspected) {
         switch (actual.kind) {
           case "unoccupied":
           case "occupied":
             break;
-          case "challengePending": {
+          case "challengePending":
+          case "challengeWaiting": {
             const runtime = this.challenges.get(actual.challengeId);
             if (
               runtime === undefined
@@ -242,14 +249,9 @@ export class WorldCoordinator {
                 `Challenge ${actual.challengeId} does not match the targeted world cell`,
               );
             }
-            pendingChallenges.set(actual.challengeId, runtime);
+            lifecycleChallenges.set(actual.challengeId, runtime);
             break;
           }
-          case "challengeWaiting":
-            return adminFailure(
-              "lifecycleNotFound",
-              `Waiting challenge ${actual.challengeId} cannot be replaced by this core lifecycle`,
-            );
           case "battle": {
             const battle = this.battles.get(actual.battleId);
             const rosterPlayerIds = battle?.getRoster().map(({ playerId }) => playerId);
@@ -273,7 +275,7 @@ export class WorldCoordinator {
         }
       }
 
-      for (const [challengeId, runtime] of pendingChallenges) {
+      for (const [challengeId] of lifecycleChallenges) {
         this.finishChallenge(challengeId);
       }
       for (const [battleId, battle] of hostedBattles) {
@@ -302,6 +304,7 @@ export class WorldCoordinator {
           this.players.get(playerId)?.detachBattle(battleId, true);
         }
       }
+      this.drainWaitingChallenges();
       return { ok: true, delta };
     });
   }
@@ -458,6 +461,7 @@ export class WorldCoordinator {
     | "duplicatePlayerIds"
     | "unknownPlayer"
     | "requesterNotIncluded"
+    | "battleLimitReached"
     | null
   > {
     return await this.enqueue(() => {
@@ -471,6 +475,7 @@ export class WorldCoordinator {
       if (participants.some(
         (participant) => participant === undefined || participant.isClosed,
       )) return "unknownPlayer";
+      if (!this.capacity.canReserveRoster(playerIds)) return "battleLimitReached";
 
       const battle = this.factory.create(playerIds);
       const battleId = this.registerBattle(battle);
@@ -570,6 +575,16 @@ export class WorldCoordinator {
       return connection !== undefined && !connection.isClosed;
     });
     if (playerIds.length < 2) {
+      this.world.replaceCell(
+        challenge.position,
+        { kind: "challengePending", challengeId: challenge.challengeId },
+        { kind: "occupied", playerId: challenge.defenderId },
+      );
+      this.finishChallenge(challenge.challengeId);
+      this.drainWaitingChallenges();
+      return;
+    }
+    if (!this.capacity.hasReservationsForRoster(challengeId, playerIds)) {
       this.world.replaceCell(
         challenge.position,
         { kind: "challengePending", challengeId: challenge.challengeId },

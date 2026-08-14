@@ -24,6 +24,18 @@ test("defaults to four and validates positive safe integer overrides", () => {
 test("reserves whole rosters atomically and releases individual members", () => {
   const capacity = new PlayerBattleCapacity(new BattleRegistry(), 1);
   assert.equal(capacity.reserveRoster("challenge-1", ["first", "second"]), true);
+  assert.equal(
+    capacity.hasReservationsForRoster("challenge-1", ["first", "second"]),
+    true,
+  );
+  assert.equal(
+    capacity.hasReservationsForRoster("challenge-1", ["first", "third"]),
+    false,
+  );
+  assert.equal(
+    capacity.hasReservationsForRoster("challenge-1", ["first", "first"]),
+    false,
+  );
   assert.equal(capacity.committed("first"), 1);
   assert.equal(capacity.reserveRoster("challenge-2", ["first", "third"]), false);
   assert.deepEqual(capacity.reservedRoster("challenge-2"), []);

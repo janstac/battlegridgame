@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { NetworkServerMessage } from "@grid-game/shared";
+import type { NetworkServerMessage, WorldCell } from "@grid-game/shared";
 import { AdminService } from "../src/admin/AdminService.ts";
 import { ClientConnection } from "../src/application/ClientConnection.ts";
 import { PlayerDirectory } from "../src/application/PlayerDirectory.ts";
@@ -41,7 +41,9 @@ class ManualChallengeClock implements PendingChallengeClock {
   }
 }
 
-async function harness() {
+async function harness(options: Readonly<{
+  maxConcurrentBattlesPerPlayer?: number;
+}> = {}) {
   const players = new PlayerDirectory();
   const battles = new BattleRegistry();
   const world = new World({ random: { next: () => 0 } });
@@ -51,7 +53,16 @@ async function harness() {
     battles,
     world,
     new StandardBattleFactory(battleClock),
-    { debugEnabled: true, challengeClock },
+    {
+      debugEnabled: true,
+      challengeClock,
+      ...(options.maxConcurrentBattlesPerPlayer === undefined
+        ? {}
+        : {
+            maxConcurrentBattlesPerPlayer:
+              options.maxConcurrentBattlesPerPlayer,
+          }),
+    },
   );
   const admin = new AdminService(coordinator);
   const connect = async () => {
@@ -173,6 +184,48 @@ test("admin battle start rejects players disconnected before serialized executio
   assert.equal(response.type, "adminError");
   if (response.type === "adminError") assert.equal(response.code, "unknownPlayer");
   assert.equal(app.battles.entries().length, 0);
+});
+
+test("admin and debug battle starts reject capped rosters atomically", async (t) => {
+  const app = await harness({ maxConcurrentBattlesPerPlayer: 1 });
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const first = await app.connect();
+  const second = await app.connect();
+  const roster = [first.connection.playerId, second.connection.playerId];
+
+  const started = await app.admin.dispatch({
+    type: "adminStartBattle", requestId: "first", playerIds: roster,
+  });
+  assert.equal(started.type, "adminBattleStarted");
+  const worldBefore = app.world.snapshot();
+  const firstMessagesBefore = first.messages.length;
+  const secondMessagesBefore = second.messages.length;
+
+  assert.deepEqual(await app.admin.dispatch({
+    type: "adminStartBattle", requestId: "capped", playerIds: roster,
+  }), {
+    type: "adminError",
+    requestId: "capped",
+    code: "battleLimitReached",
+    message: "One or more battle participants have reached the concurrent battle limit",
+  });
+  assert.equal(
+    await app.coordinator.createDebugBattle(first.connection, roster),
+    "battleLimitReached",
+  );
+  assert.equal(app.battles.entries().length, 1);
+  assert.equal(first.messages.length, firstMessagesBefore);
+  assert.equal(second.messages.length, secondMessagesBefore);
+  assert.deepEqual(app.world.snapshot(), worldBefore);
+
+  await first.connection.receive({
+    type: "challengeWorldCell", requestId: "later-capacity", position: { x: 2, y: 0 },
+  });
+  assert.deepEqual(first.messages.at(-1), {
+    type: "worldCommandRejected",
+    requestId: "later-capacity",
+    reason: "battleLimitReached",
+  });
 });
 
 test("admin world replacement commits one atomic ordinary-cell delta", async (t) => {
@@ -328,6 +381,71 @@ test("admin replacement fully compares and silently retires a challenge", async 
   assert.equal(second.messages.some(({ type }) => type === "battleJoined"), false);
 });
 
+test("admin replacement fully compares and silently retires a Waiting challenge", async (t) => {
+  const app = await harness({ maxConcurrentBattlesPerPlayer: 1 });
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const defender = await app.connect();
+  const opponent = await app.connect();
+  const challenger = await app.connect();
+  const roster = [defender.connection.playerId, opponent.connection.playerId];
+  assert.equal(await app.coordinator.createDebugBattle(
+    defender.connection,
+    roster,
+  ), null);
+  await challenger.connection.receive({
+    type: "challengeWorldCell", requestId: "waiting", position: { x: 0, y: 0 },
+  });
+  const waiting = app.world.cellAt({ x: 0, y: 0 });
+  assert.equal(waiting.kind, "challengeWaiting");
+  if (waiting.kind !== "challengeWaiting") return;
+  const revision = app.world.revision;
+  const messageCounts = [
+    defender.messages.length,
+    opponent.messages.length,
+    challenger.messages.length,
+  ];
+
+  const stale = await app.admin.dispatch({
+    type: "adminReplaceWorldCells",
+    requestId: "stale-waiting",
+    changes: [{
+      position: { x: 0, y: 0 },
+      expected: { ...waiting, waitingId: waiting.waitingId + 1 },
+      next: { kind: "unoccupied" },
+    }],
+  });
+  assert.equal(stale.type === "adminError" ? stale.code : null, "conflict");
+  assert.equal(app.world.revision, revision);
+
+  const replaced = await app.admin.dispatch({
+    type: "adminReplaceWorldCells",
+    requestId: "cancel-waiting",
+    changes: [{
+      position: { x: 0, y: 0 },
+      expected: waiting,
+      next: { kind: "occupied", playerId: challenger.connection.playerId },
+    }],
+  });
+  assert.equal(replaced.type, "adminWorldCellsReplaced");
+  assert.deepEqual(app.world.cellAt({ x: 0, y: 0 }), {
+    kind: "occupied", playerId: challenger.connection.playerId,
+  });
+  assert.equal(app.world.revision, revision + 1);
+  for (const [client, count] of [
+    [defender, messageCounts[0]],
+    [opponent, messageCounts[1]],
+    [challenger, messageCounts[2]],
+  ] as const) {
+    assert.deepEqual(client.messages.slice(count).map(({ type }) => type), ["worldDelta"]);
+  }
+
+  await defender.connection.receive({ type: "leaveBattle", battleId: "battle-1" });
+  await app.coordinator.adminGetWorld();
+  assert.deepEqual(app.world.cellAt({ x: 0, y: 0 }), {
+    kind: "occupied", playerId: challenger.connection.playerId,
+  });
+});
+
 test("admin replacement cancels only the targeted world battle after its one delta", async (t) => {
   const app = await harness();
   t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
@@ -384,6 +502,79 @@ test("admin replacement cancels only the targeted world battle after its one del
       (message) => message.type === "battleLeft" && message.battleId === battleCell.battleId,
     ).length, 1);
   }
+});
+
+test("admin batch promotion starts only after replacement commit and battle-left delivery", async (t) => {
+  const app = await harness({ maxConcurrentBattlesPerPlayer: 1 });
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const defender = await app.connect();
+  const opponent = await app.connect();
+  const challenger = await app.connect();
+  await opponent.connection.receive({
+    type: "challengeWorldCell", requestId: "battle", position: { x: 0, y: 0 },
+  });
+  app.challengeClock.advance(5_000);
+  await app.coordinator.adminGetWorld();
+  const battleCell = app.world.cellAt({ x: 0, y: 0 });
+  assert.equal(battleCell.kind, "battle");
+  if (battleCell.kind !== "battle") return;
+
+  await challenger.connection.receive({
+    type: "challengeWorldCell", requestId: "waiting", position: { x: 1, y: 0 },
+  });
+  const waitingCell = app.world.cellAt({ x: 1, y: 0 });
+  assert.equal(waitingCell.kind, "challengeWaiting");
+  if (waitingCell.kind !== "challengeWaiting") return;
+  const revision = app.world.revision;
+  const observedWaitingKinds: WorldCell["kind"][] = [];
+  const deltas: Array<Readonly<{ revision: number; changeCount: number }>> = [];
+  const unsubscribe = app.world.subscribe((delta) => {
+    deltas.push({ revision: delta.revision, changeCount: delta.changes.length });
+    observedWaitingKinds.push(app.world.cellAt({ x: 1, y: 0 }).kind);
+  });
+  t.after(unsubscribe);
+  const messageCounts = [
+    defender.messages.length,
+    opponent.messages.length,
+    challenger.messages.length,
+  ];
+
+  const response = await app.admin.dispatch({
+    type: "adminReplaceWorldCells",
+    requestId: "replace-and-promote",
+    changes: [
+      {
+        position: { x: 0, y: 0 }, expected: battleCell,
+        next: { kind: "unoccupied" },
+      },
+      {
+        position: { x: 4, y: 0 },
+        expected: app.world.cellAt({ x: 4, y: 0 }),
+        next: { kind: "occupied", playerId: opponent.connection.playerId },
+      },
+    ],
+  });
+  assert.equal(response.type, "adminWorldCellsReplaced");
+  if (response.type !== "adminWorldCellsReplaced") return;
+  assert.equal(response.revision, revision + 1);
+  assert.deepEqual(deltas, [
+    { revision: revision + 1, changeCount: 2 },
+    { revision: revision + 2, changeCount: 1 },
+  ]);
+  assert.deepEqual(observedWaitingKinds, ["challengeWaiting", "challengePending"]);
+  assert.equal(app.world.cellAt({ x: 1, y: 0 }).kind, "challengePending");
+  assert.deepEqual(
+    defender.messages.slice(messageCounts[0]).map(({ type }) => type),
+    ["worldDelta", "battleLeft", "worldDelta"],
+  );
+  assert.deepEqual(
+    opponent.messages.slice(messageCounts[1]).map(({ type }) => type),
+    ["worldDelta", "battleLeft", "worldDelta"],
+  );
+  assert.deepEqual(
+    challenger.messages.slice(messageCounts[2]).map(({ type }) => type),
+    ["worldDelta", "worldDelta"],
+  );
 });
 
 test("admin replacement preflights every lifecycle before cancelling any", async (t) => {

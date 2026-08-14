@@ -240,6 +240,26 @@ test("the internal detached battle helper remains gated", async (t) => {
   ), true);
 });
 
+test("debug battle creation preflights whole-roster capacity without side effects", async (t) => {
+  const app = await harness(true, 1);
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const first = await app.connect();
+  const second = await app.connect();
+  const roster = [first.connection.playerId, second.connection.playerId];
+  assert.equal(await app.coordinator.createDebugBattle(first.connection, roster), null);
+  const snapshot = app.world.snapshot();
+  const messageCounts = [first.messages.length, second.messages.length];
+
+  assert.equal(
+    await app.coordinator.createDebugBattle(first.connection, roster),
+    "battleLimitReached",
+  );
+  assert.equal(app.battles.entries().length, 1);
+  assert.deepEqual(app.world.snapshot(), snapshot);
+  assert.equal(first.messages.length, messageCounts[0]);
+  assert.equal(second.messages.length, messageCounts[1]);
+});
+
 test("countdown reservations reject capped creators and joiners", async (t) => {
   const app = await harness(true, 1);
   t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
