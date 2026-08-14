@@ -23,7 +23,7 @@
   margin: 0 0 0.75rem;
   color: var(--color-accent);
   font-size: 0.75rem;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
@@ -108,7 +108,7 @@
   margin-left: auto;
   color: var(--color-success-text);
   font-size: 0.72rem;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }

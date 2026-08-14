@@ -1,12 +1,14 @@
-@import "@fontsource-variable/noto-sans";
-@import "@fontsource-variable/noto-serif";
+@import "@fontsource/noto-sans/400.css";
+@import "@fontsource/noto-sans/700.css";
+@import "@fontsource/noto-sans/800.css";
+@import "@fontsource/noto-serif/800.css";
 @import "./theme.css";
 
 :root {
   color: var(--color-page-text);
   background: var(--color-page-background);
   font-family:
-    "Noto Sans Variable", ui-sans-serif, system-ui, sans-serif;
+    "Noto Sans", ui-sans-serif, system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
