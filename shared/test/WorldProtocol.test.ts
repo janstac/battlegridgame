@@ -214,7 +214,6 @@ test("network protocol parses snapshots, deltas, command results, and joined ros
         { participantId: 1, playerId: beta, status: "active" },
       ],
       snapshot: makeBattleSnapshot(),
-      createRequestId: null,
     },
   ];
 
@@ -225,12 +224,14 @@ test("network protocol parses snapshots, deltas, command results, and joined ros
   assert.deepEqual(parseNetworkServerMessage({
     ...messages.at(-1),
     worldPosition: null,
-    createRequestId: "debug-create-1",
   }), {
     ...messages.at(-1),
     worldPosition: null,
-    createRequestId: "debug-create-1",
   });
+  assert.throws(() => parseNetworkServerMessage({
+    ...messages.at(-1),
+    createRequestId: "debug-create-1",
+  }));
 });
 
 test("World command rejections use the complete stable reason set", () => {

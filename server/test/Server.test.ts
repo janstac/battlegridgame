@@ -207,22 +207,23 @@ test("simultaneous battle disconnects cannot award a cell to a closed player", a
   ), false);
 });
 
-test("debug creation remains gated and uses authenticated local identity", async (t) => {
+test("the internal detached battle helper remains gated", async (t) => {
   const disabled = await harness(false);
   t.after(async () => { await disabled.coordinator.dispose(); await disabled.battles.dispose(); });
   const client = await disabled.connect();
-  await client.connection.receive({ type: "debugGetPlayerIds", requestId: "get" });
-  assert.deepEqual(client.messages.at(-1), {
-    type: "debugGetPlayerIdsRejected", requestId: "get", reason: "debugDisabled",
-  });
+  assert.equal(
+    await disabled.coordinator.createDebugBattle(client.connection, ["player-1", "player-2"]),
+    "debugDisabled",
+  );
 
   const enabled = await harness(true);
   t.after(async () => { await enabled.coordinator.dispose(); await enabled.battles.dispose(); });
   const first = await enabled.connect();
   await enabled.connect();
-  await first.connection.receive({
-    type: "debugCreateBattle", requestId: "create", playerIds: ["player-1", "player-2"],
-  });
+  assert.equal(await enabled.coordinator.createDebugBattle(
+    first.connection,
+    ["player-1", "player-2"],
+  ), null);
   const joined = first.messages.find((message) => message.type === "battleJoined");
   assert.equal(joined?.type === "battleJoined" ? joined.localParticipantId : -1, 0);
   await first.connection.receive({

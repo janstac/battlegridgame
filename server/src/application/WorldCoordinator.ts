@@ -1,7 +1,6 @@
 import type {
   BattleId,
   ChallengeId,
-  DebugCreateBattleRejectionReason,
   PlayerId,
   Position,
   RequestId,
@@ -178,9 +177,15 @@ export class WorldCoordinator {
 
   async createDebugBattle(
     requester: ClientConnection,
-    requestId: RequestId,
     playerIds: readonly PlayerId[],
-  ): Promise<DebugCreateBattleRejectionReason | null> {
+  ): Promise<
+    | "debugDisabled"
+    | "invalidPlayerCount"
+    | "duplicatePlayerIds"
+    | "unknownPlayer"
+    | "requesterNotIncluded"
+    | null
+  > {
     return await this.enqueue(() => {
       if (!this.debugEnabled) return "debugDisabled";
       if (playerIds.length < 2 || playerIds.length > this.maxDebugPlayers) {
@@ -196,11 +201,7 @@ export class WorldCoordinator {
       const battle = this.factory.create(playerIds);
       const battleId = this.registerBattle(battle);
       for (const participant of participants as ClientConnection[]) {
-        participant.attachBattle(
-          battleId,
-          battle,
-          participant === requester ? requestId : null,
-        );
+        participant.attachBattle(battleId, battle);
       }
       battle.start();
       return null;
@@ -314,7 +315,7 @@ export class WorldCoordinator {
     );
     this.finishChallenge(challenge.challengeId);
     for (const playerId of playerIds) {
-      this.players.get(playerId)?.attachBattle(battleId, battle, null);
+      this.players.get(playerId)?.attachBattle(battleId, battle);
     }
     battle.start();
   }

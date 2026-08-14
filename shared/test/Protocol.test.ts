@@ -33,9 +33,9 @@ test("network protocol multiplexes battle-local messages without contaminating s
     message: { type: "tickProbe", probeId: "probe-1" },
   };
   assert.deepEqual(parseNetworkClientMessage(routed), routed);
-  assert.deepEqual(parseNetworkClientMessage({
+  assert.throws(() => parseNetworkClientMessage({
     type: "debugGetPlayerIds", requestId: "players-1",
-  }), { type: "debugGetPlayerIds", requestId: "players-1" });
+  }));
   assert.deepEqual(parseNetworkServerMessage({
     type: "connected", playerId: "player-1",
   }), { type: "connected", playerId: "player-1" });

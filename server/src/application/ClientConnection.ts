@@ -65,22 +65,6 @@ export class ClientConnection {
 
   private async handle(message: NetworkClientMessage): Promise<void> {
     switch (message.type) {
-      case "debugGetPlayerIds":
-        if (!this.coordinator.debugEnabled) {
-          this.output({ type: "debugGetPlayerIdsRejected", requestId: message.requestId, reason: "debugDisabled" });
-        } else {
-          this.output({ type: "debugPlayerIds", requestId: message.requestId, playerIds: [...this.coordinator.connectedPlayerIds()] });
-        }
-        return;
-      case "debugCreateBattle": {
-        const reason = await this.coordinator.createDebugBattle(
-          this,
-          message.requestId,
-          message.playerIds,
-        );
-        if (reason !== null) this.output({ type: "debugCreateBattleRejected", requestId: message.requestId, reason });
-        return;
-      }
       case "challengeWorldCell":
         await this.sendWorldCommandResult(
           message.requestId,
@@ -125,7 +109,6 @@ export class ClientConnection {
   attachBattle(
     battleId: BattleId,
     battle: HostedBattle,
-    createRequestId: RequestId | null,
   ): void {
     if (this.closed || this.memberships.has(battleId)) return;
     const participantId = battle.participantIdForPlayer(this.playerId);
@@ -149,7 +132,6 @@ export class ClientConnection {
       localParticipantId: participantId,
       roster: [...battle.getRoster()],
       snapshot: attachment.snapshot,
-      createRequestId,
     });
   }
 

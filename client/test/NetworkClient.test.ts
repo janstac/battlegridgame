@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { NetworkClientMessage, NetworkServerMessage } from "@grid-game/shared";
+import type {
+  AnonymousNetworkClientMessage,
+  NetworkClientMessage,
+  NetworkServerMessage,
+} from "@grid-game/shared";
 import {
   NetworkClient,
   type NetworkClientEvent,
@@ -28,20 +32,29 @@ function worldSnapshot(revision = 0) {
 }
 
 class FakeSocket implements NetworkWebSocket {
-  readyState = 1;
-  readonly sent: NetworkClientMessage[] = [];
+  readyState = 0;
+  readonly sent: Array<AnonymousNetworkClientMessage | NetworkClientMessage> = [];
   closeCount = 0;
+  private readonly openListeners: Array<() => void> = [];
   private readonly messageListeners: Array<(event: MessageEvent<unknown>) => void> = [];
   private readonly closeListeners: Array<() => void> = [];
   private readonly errorListeners: Array<() => void> = [];
 
-  addEventListener(type: "message" | "close" | "error", listener: ((event: MessageEvent<unknown>) => void) | (() => void)): void {
-    if (type === "message") this.messageListeners.push(listener as (event: MessageEvent<unknown>) => void);
+  addEventListener(type: "open" | "message" | "close" | "error", listener: ((event: MessageEvent<unknown>) => void) | (() => void)): void {
+    if (type === "open") this.openListeners.push(listener as () => void);
+    else if (type === "message") this.messageListeners.push(listener as (event: MessageEvent<unknown>) => void);
     else if (type === "close") this.closeListeners.push(listener as () => void);
     else this.errorListeners.push(listener as () => void);
   }
-  send(data: string): void { this.sent.push(JSON.parse(data) as NetworkClientMessage); }
+  send(data: string): void {
+    if (this.readyState !== 1) throw new Error("Socket is not open");
+    this.sent.push(JSON.parse(data) as AnonymousNetworkClientMessage | NetworkClientMessage);
+  }
   close(): void { this.closeCount += 1; this.readyState = 3; }
+  emitOpen(): void {
+    this.readyState = 1;
+    for (const listener of this.openListeners) listener();
+  }
   emit(message: NetworkServerMessage): void {
     for (const listener of this.messageListeners) listener({ data: JSON.stringify(message) } as MessageEvent<string>);
   }
@@ -60,32 +73,80 @@ async function connectFake(): Promise<{ client: NetworkClient; socket: FakeSocke
     webSocketFactory: () => socket,
     requestIdFactory: (() => { let id = 1; return () => `request-${id++}`; })(),
   });
+  assert.deepEqual(socket.sent, []);
+  socket.emitOpen();
+  assert.deepEqual(socket.sent, [{ type: "connectAsPlayer" }]);
   socket.emit({ type: "connected", playerId: "player-1" });
   return { client: await pending, socket };
 }
 
-test("connects on the initial identity and correlates debug player snapshots", async () => {
+test("waits for socket open and identifies as a player before accepting identity", async () => {
   const { client, socket } = await connectFake();
   assert.equal(client.playerId, "player-1");
-  const pending = client.debugGetPlayerIds();
-  assert.deepEqual(socket.sent.at(-1), { type: "debugGetPlayerIds", requestId: "request-1" });
-  socket.emit({ type: "debugPlayerIds", requestId: "request-1", playerIds: ["player-1", "player-2"] });
-  assert.deepEqual(await pending, ["player-1", "player-2"]);
+  assert.deepEqual(socket.sent, [{ type: "connectAsPlayer" }]);
   await client.close();
   assert.equal(socket.closeCount, 1);
 });
 
-test("creates sessions automatically, buffers deltas, routes, and leaves one battle", async () => {
+test("identifies immediately when a supplied socket is already open", async () => {
+  const socket = new FakeSocket();
+  socket.readyState = 1;
+  const pending = NetworkClient.connect("ws://example/ws", {
+    webSocketFactory: () => socket,
+  });
+  assert.deepEqual(socket.sent, [{ type: "connectAsPlayer" }]);
+  socket.emit({ type: "connected", playerId: "player-1" });
+  const client = await pending;
+  await client.close();
+});
+
+test("sends a fresh player handshake for each reconnect attempt", async () => {
+  for (const playerId of ["player-1", "player-2"] as const) {
+    const socket = new FakeSocket();
+    const pending = NetworkClient.connect("ws://example/ws", {
+      webSocketFactory: () => socket,
+    });
+    socket.emitOpen();
+    assert.deepEqual(socket.sent, [{ type: "connectAsPlayer" }]);
+    socket.emit({ type: "connected", playerId });
+    const client = await pending;
+    assert.equal(client.playerId, playerId);
+    await client.close();
+  }
+});
+
+test("rejects a connection closed before player role confirmation", async () => {
+  const socket = new FakeSocket();
+  const pending = NetworkClient.connect("ws://example/ws", {
+    webSocketFactory: () => socket,
+  });
+  socket.emitOpen();
+  socket.emitClose();
+  await assert.rejects(pending, /closed before connecting/);
+});
+
+test("rejects a non-player first server message", async () => {
+  const socket = new FakeSocket();
+  const pending = NetworkClient.connect("ws://example/ws", {
+    webSocketFactory: () => socket,
+  });
+  socket.emitOpen();
+  socket.emit({ type: "worldSnapshot", snapshot: worldSnapshot() });
+  await assert.rejects(pending, /First server message must be connected/);
+  assert.equal(socket.closeCount, 1);
+});
+
+test("creates unsolicited sessions automatically, buffers deltas, routes, and leaves one battle", async () => {
   const { client, socket } = await connectFake();
   const events: string[] = [];
   client.subscribe((event) => events.push(event.type));
-  const creating = client.debugCreateBattle(["player-1", "player-2"]);
   socket.emit({
     type: "battleJoined", battleId: "battle-1", localParticipantId: 0,
     roster: [...ROSTER], worldPosition: null,
-    snapshot: createBattleSnapshot(), createRequestId: "request-1",
+    snapshot: createBattleSnapshot(),
   });
-  const session = await creating;
+  const session = client.getSession("battle-1");
+  assert.ok(session);
   socket.emit({
     type: "battleMessage", battleId: "battle-1",
     message: { type: "tickProbeResult", probeId: "probe", tick: 2 },
@@ -106,29 +167,18 @@ test("creates sessions automatically, buffers deltas, routes, and leaves one bat
   await client.close();
 });
 
-test("debug rejections reject their correlated promises", async () => {
-  const { client, socket } = await connectFake();
-  const pending = client.debugCreateBattle(["player-1"]);
-  socket.emit({ type: "debugCreateBattleRejected", requestId: "request-1", reason: "invalidPlayerCount" });
-  await assert.rejects(pending, /invalidPlayerCount/);
-  const players = client.debugGetPlayerIds();
-  socket.emit({ type: "debugGetPlayerIdsRejected", requestId: "request-2", reason: "debugDisabled" });
-  await assert.rejects(players, /debugDisabled/);
-  await client.close();
-});
-
 test("publishes an unexpected socket close and rejects pending requests", async () => {
   const { client, socket } = await connectFake();
   const events: NetworkClientEvent[] = [];
   client.subscribe((event) => events.push(event));
-  const players = client.debugGetPlayerIds();
-  const battle = client.debugCreateBattle(["player-1"]);
-  const playersRejected = assert.rejects(players, /WebSocket closed/);
-  const battleRejected = assert.rejects(battle, /WebSocket closed/);
+  socket.emit({ type: "worldSnapshot", snapshot: worldSnapshot() });
+  await client.world.ready;
+  const challenge = client.world.challengeCell({ x: 1, y: 0 });
+  const challengeRejected = assert.rejects(challenge, /WebSocket closed/);
 
   socket.emitClose();
 
-  await Promise.all([playersRejected, battleRejected]);
+  await challengeRejected;
   assert.equal(events.length, 1);
   assert.equal(events[0]?.type, "connectionClosed");
   assert.equal(events[0]?.type === "connectionClosed" && events[0].reason, "socket");
@@ -165,7 +215,7 @@ test("intentional close publishes its reason and terminates joined sessions", as
   socket.emit({
     type: "battleJoined", battleId: "battle-1", localParticipantId: 0,
     roster: [...ROSTER], worldPosition: { x: 1, y: 2 },
-    snapshot: createBattleSnapshot(), createRequestId: null,
+    snapshot: createBattleSnapshot(),
   });
   const session = client.getSession("battle-1");
   assert.ok(session);
@@ -272,7 +322,6 @@ test("retains multiple battles and removes only the battle that left", async () 
       roster: [...ROSTER],
       worldPosition: null,
       snapshot: createBattleSnapshot(),
-      createRequestId: null,
     });
   }
   const first = client.getSession("battle-1");

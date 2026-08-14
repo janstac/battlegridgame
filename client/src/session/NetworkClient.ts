@@ -12,6 +12,7 @@ import { NetworkWorldSession } from "./NetworkWorldSession.ts";
 
 export interface NetworkWebSocket {
   readonly readyState: number;
+  addEventListener(type: "open", listener: () => void): void;
   addEventListener(type: "message", listener: (event: MessageEvent<unknown>) => void): void;
   addEventListener(type: "close", listener: () => void): void;
   addEventListener(type: "error", listener: () => void): void;
@@ -33,10 +34,6 @@ export type NetworkClientOptions = Readonly<{
   requestIdFactory?: () => RequestId;
 }>;
 
-type PendingPlayers = { resolve(value: readonly PlayerId[]): void; reject(error: Error): void };
-type PendingBattle = { resolve(value: NetworkBattleSession): void; reject(error: Error): void };
-
-
 /** Owns one multiplexed socket and all remote battle sessions on it. */
 export class NetworkClient {
   readonly playerId: PlayerId;
@@ -45,8 +42,6 @@ export class NetworkClient {
   private readonly requestIdFactory: () => RequestId;
   private readonly sessions = new Map<BattleId, NetworkBattleSession>();
   private readonly listeners = new Set<(event: NetworkClientEvent) => void>();
-  private readonly playerRequests = new Map<RequestId, PendingPlayers>();
-  private readonly battleRequests = new Map<RequestId, PendingBattle>();
   private readonly leaveRequests = new Map<BattleId, () => void>();
   private closed = false;
 
@@ -70,6 +65,18 @@ export class NetworkClient {
     return await new Promise<NetworkClient>((resolve, reject) => {
       let client: NetworkClient | null = null;
       let settled = false;
+      let roleSent = false;
+      const identifyAsPlayer = () => {
+        if (roleSent) return;
+        try {
+          socket.send(JSON.stringify({ type: "connectAsPlayer" }));
+          roleSent = true;
+        } catch (error) {
+          socket.close(1008, "player role handshake failed");
+          if (!settled) reject(error);
+        }
+      };
+      socket.addEventListener("open", identifyAsPlayer);
       socket.addEventListener("message", (event) => {
         try {
           if (typeof event.data !== "string") throw new TypeError("Expected a text WebSocket message");
@@ -95,6 +102,7 @@ export class NetworkClient {
         if (!settled) reject(new Error("WebSocket closed before connecting"));
         client?.terminate("socket", new Error("WebSocket closed"));
       });
+      if (socket.readyState === 1) identifyAsPlayer();
     });
   }
 
@@ -109,36 +117,6 @@ export class NetworkClient {
 
   getSessions(): readonly NetworkBattleSession[] {
     return [...this.sessions.values()];
-  }
-
-  async debugGetPlayerIds(): Promise<readonly PlayerId[]> {
-    this.assertOpen();
-    const requestId = this.requestIdFactory();
-    const result = new Promise<readonly PlayerId[]>((resolve, reject) => {
-      this.playerRequests.set(requestId, { resolve, reject });
-    });
-    try {
-      this.sendNetworkMessage({ type: "debugGetPlayerIds", requestId });
-    } catch (error) {
-      this.playerRequests.delete(requestId);
-      throw error;
-    }
-    return await result;
-  }
-
-  async debugCreateBattle(playerIds: readonly PlayerId[]): Promise<NetworkBattleSession> {
-    this.assertOpen();
-    const requestId = this.requestIdFactory();
-    const result = new Promise<NetworkBattleSession>((resolve, reject) => {
-      this.battleRequests.set(requestId, { resolve, reject });
-    });
-    try {
-      this.sendNetworkMessage({ type: "debugCreateBattle", requestId, playerIds: [...playerIds] });
-    } catch (error) {
-      this.battleRequests.delete(requestId);
-      throw error;
-    }
-    return await result;
   }
 
   async sendBattleMessage(battleId: BattleId, message: ClientMessage): Promise<void> {
@@ -180,27 +158,6 @@ export class NetworkClient {
       case "connected":
         this.socket.close(1008, "duplicate connected message");
         return;
-      case "debugPlayerIds": {
-        const pending = this.playerRequests.get(message.requestId);
-        if (pending === undefined) return;
-        this.playerRequests.delete(message.requestId);
-        pending.resolve([...message.playerIds]);
-        return;
-      }
-      case "debugGetPlayerIdsRejected": {
-        const pending = this.playerRequests.get(message.requestId);
-        if (pending === undefined) return;
-        this.playerRequests.delete(message.requestId);
-        pending.reject(new Error(message.reason));
-        return;
-      }
-      case "debugCreateBattleRejected": {
-        const pending = this.battleRequests.get(message.requestId);
-        if (pending === undefined) return;
-        this.battleRequests.delete(message.requestId);
-        pending.reject(new Error(message.reason));
-        return;
-      }
       case "battleJoined": {
         const localRosterEntry = message.roster.find(
           ({ participantId }) => participantId === message.localParticipantId,
@@ -218,13 +175,6 @@ export class NetworkClient {
           message.snapshot,
         );
         this.sessions.set(message.battleId, session);
-        if (message.createRequestId !== null) {
-          const pending = this.battleRequests.get(message.createRequestId);
-          if (pending !== undefined) {
-            this.battleRequests.delete(message.createRequestId);
-            pending.resolve(session);
-          }
-        }
         this.publish({ type: "battleJoined", session });
         return;
       }
@@ -286,11 +236,7 @@ export class NetworkClient {
     for (const session of this.sessions.values()) session.terminate();
     this.world.terminate(rejection);
     this.sessions.clear();
-    for (const pending of this.playerRequests.values()) pending.reject(rejection);
-    for (const pending of this.battleRequests.values()) pending.reject(rejection);
     for (const resolve of this.leaveRequests.values()) resolve();
-    this.playerRequests.clear();
-    this.battleRequests.clear();
     this.leaveRequests.clear();
     try {
       this.publish({ type: "connectionClosed", reason, error });

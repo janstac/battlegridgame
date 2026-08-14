@@ -152,16 +152,28 @@ test("real clients discover players, share authoritative battle facts, probe, le
 
   assert.equal(first.playerId, "player-1");
   assert.equal(second.playerId, "player-2");
-  assert.deepEqual(await first.debugGetPlayerIds(), ["player-1", "player-2"]);
+  assert.deepEqual(app.server.players.playerIds(), ["player-1", "player-2"]);
 
+  const firstJoin = waitForClientEvent(
+    first,
+    (event) => event.type === "battleJoined",
+    "the creating client to join the battle",
+  );
   const secondJoin = waitForClientEvent(
     second,
     (event) => event.type === "battleJoined",
     "the invited client to join the battle",
   );
-  const firstSession = await first.debugCreateBattle([first.playerId, second.playerId]);
-  const secondJoinEvent = await secondJoin;
+  const requester = app.server.players.get(first.playerId);
+  assert.ok(requester);
+  assert.equal(await app.server.coordinator.createDebugBattle(
+    requester,
+    [first.playerId, second.playerId],
+  ), null);
+  const [firstJoinEvent, secondJoinEvent] = await Promise.all([firstJoin, secondJoin]);
+  assert.equal(firstJoinEvent.type, "battleJoined");
   assert.equal(secondJoinEvent.type, "battleJoined");
+  const firstSession = firstJoinEvent.session;
   const secondSession = secondJoinEvent.session;
   assert.equal(firstSession.battleId, "battle-1");
   assert.equal(secondSession.battleId, firstSession.battleId);
@@ -228,7 +240,7 @@ test("real clients discover players, share authoritative battle facts, probe, le
   await second.close();
   await withTimeout((async () => {
     for (;;) {
-      const playerIds = await first.debugGetPlayerIds();
+      const playerIds = app.server.players.playerIds();
       if (playerIds.length === 1) return playerIds;
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
@@ -246,9 +258,15 @@ test("gateway rejects malformed client messages with a policy close", async (t) 
   t.after(() => socket.close());
 
   await withTimeout(new Promise<void>((resolve, reject) => {
+    socket.once("open", () => resolve());
+    socket.once("error", reject);
+  }), "the raw WebSocket to open");
+  const identified = withTimeout(new Promise<void>((resolve, reject) => {
     socket.once("message", () => resolve());
     socket.once("error", reject);
   }), "the gateway identity message");
+  socket.send(JSON.stringify({ type: "connectAsPlayer" }));
+  await identified;
 
   const closed = withTimeout(new Promise<{ code: number; reason: string }>((resolve) => {
     socket.once("close", (code, reason) => resolve({ code, reason: reason.toString() }));

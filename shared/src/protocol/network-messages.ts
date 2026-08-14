@@ -19,21 +19,9 @@ import {
 import { ClientMessageSchema } from "./client-messages.ts";
 import { ServerMessageSchema } from "./server-messages.ts";
 
-export const DebugCreateBattleMessageSchema = Type.Object({
-  type: Type.Literal("debugCreateBattle"),
-  requestId: RequestIdSchema,
-  playerIds: Type.Array(PlayerIdSchema),
-}, { additionalProperties: false });
-
-export const DebugGetPlayerIdsMessageSchema = Type.Object({
-  type: Type.Literal("debugGetPlayerIds"),
-  requestId: RequestIdSchema,
-}, { additionalProperties: false });
-
 export const LeaveBattleMessageSchema = Type.Object({
   type: Type.Literal("leaveBattle"),
   battleId: BattleIdSchema,
-  // Optional while the legacy debug flow sends leave without correlation.
   requestId: Type.Optional(RequestIdSchema),
 }, { additionalProperties: false });
 
@@ -66,8 +54,6 @@ export const RoutedClientBattleMessageSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const NetworkClientMessageSchema = Type.Union([
-  DebugCreateBattleMessageSchema,
-  DebugGetPlayerIdsMessageSchema,
   LeaveBattleMessageSchema,
   ChallengeWorldCellMessageSchema,
   JoinWorldChallengeMessageSchema,
@@ -80,12 +66,6 @@ export type NetworkClientMessage = Type.Static<typeof NetworkClientMessageSchema
 export const ConnectedMessageSchema = Type.Object({
   type: Type.Literal("connected"),
   playerId: PlayerIdSchema,
-}, { additionalProperties: false });
-
-export const DebugPlayerIdsMessageSchema = Type.Object({
-  type: Type.Literal("debugPlayerIds"),
-  requestId: RequestIdSchema,
-  playerIds: Type.Array(PlayerIdSchema),
 }, { additionalProperties: false });
 
 /** A server-hosted mapping from battle-local identity to connection identity. */
@@ -108,30 +88,6 @@ export const BattleJoinedMessageSchema = Type.Object({
     uniqueItems: true,
   }),
   snapshot: BattleSnapshotSchema,
-  createRequestId: Type.Union([RequestIdSchema, Type.Null()]),
-}, { additionalProperties: false });
-
-export const DebugCreateBattleRejectionReasonSchema = Type.Union([
-  Type.Literal("debugDisabled"),
-  Type.Literal("invalidPlayerCount"),
-  Type.Literal("duplicatePlayerIds"),
-  Type.Literal("unknownPlayer"),
-  Type.Literal("requesterNotIncluded"),
-]);
-export type DebugCreateBattleRejectionReason = Type.Static<
-  typeof DebugCreateBattleRejectionReasonSchema
->;
-
-export const DebugCreateBattleRejectedMessageSchema = Type.Object({
-  type: Type.Literal("debugCreateBattleRejected"),
-  requestId: RequestIdSchema,
-  reason: DebugCreateBattleRejectionReasonSchema,
-}, { additionalProperties: false });
-
-export const DebugGetPlayerIdsRejectedMessageSchema = Type.Object({
-  type: Type.Literal("debugGetPlayerIdsRejected"),
-  requestId: RequestIdSchema,
-  reason: Type.Literal("debugDisabled"),
 }, { additionalProperties: false });
 
 export const BattleLeftMessageSchema = Type.Object({
@@ -184,10 +140,7 @@ export const RoutedServerBattleMessageSchema = Type.Object({
 
 export const NetworkServerMessageSchema = Type.Union([
   ConnectedMessageSchema,
-  DebugPlayerIdsMessageSchema,
   BattleJoinedMessageSchema,
-  DebugCreateBattleRejectedMessageSchema,
-  DebugGetPlayerIdsRejectedMessageSchema,
   BattleLeftMessageSchema,
   WorldSnapshotMessageSchema,
   WorldDeltaMessageSchema,
