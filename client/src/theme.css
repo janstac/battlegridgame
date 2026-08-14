@@ -39,6 +39,7 @@
   --color-battle-wall-border: #8996a8;
   --color-battle-wall-mark: #59677b;
   --color-local-count-outline: #000;
+  --color-cooldown-arc: #000;
   --color-pending-mark: #ffffff;
   --color-pending-border: #243148;
   --color-world-backdrop: #d5deea;
@@ -98,6 +99,7 @@
     --color-battle-wall-border: #4b5668;
     --color-battle-wall-mark: #758094;
     --color-local-count-outline: #fff;
+    --color-cooldown-arc: #fff;
     --color-pending-mark: #ffffff;
     --color-pending-border: #121b29;
     --color-world-backdrop: #090f1b;
@@ -150,6 +152,7 @@
   --color-battle-wall-border: #4b5668;
   --color-battle-wall-mark: #758094;
   --color-local-count-outline: #fff;
+  --color-cooldown-arc: #fff;
   --color-pending-mark: #ffffff;
   --color-pending-border: #121b29;
   --color-world-backdrop: #090f1b;

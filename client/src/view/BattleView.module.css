@@ -31,20 +31,52 @@
   background: var(--color-surface-interactive);
 }
 
-.cooldownRing {
-  display: inline-flex;
+.cooldownSlot {
+  display: inline-grid;
   flex: none;
-  padding: 0.1rem;
+  width: 0.97rem;
+  height: 0.97rem;
+  place-items: center;
+}
+
+.cooldownRing {
+  position: relative;
+  display: inline-flex;
+  padding: 0;
   border-radius: 50%;
-  box-shadow: 0 0 0 1px var(--color-surface-raised);
+  transition: padding 180ms ease;
+}
+
+.cooldownRing::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  border-radius: inherit;
   background: conic-gradient(
     from -90deg,
-    var(--player-color) calc(var(--cooldown-progress) * 1turn),
+    var(--color-cooldown-arc) calc(var(--cooldown-progress) * 1turn),
     transparent 0
   );
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 0.16rem),
+    #000 0
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 0.16rem),
+    #000 0
+  );
+  pointer-events: none;
+}
+
+.cooling {
+  padding: 0.16rem;
 }
 
 .swatch {
+  position: relative;
+  z-index: 1;
   width: 0.65rem;
   height: 0.65rem;
   border-radius: 50%;
@@ -77,5 +109,11 @@
 @media (max-width: 36rem) {
   .panel {
     padding: 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cooldownRing {
+    transition: none;
   }
 }

@@ -57,6 +57,7 @@ export function BattleView({
             snapshot.cooldowns.find((entry) => entry.participantId === participantId),
             state.estimatedTick,
           );
+          const isCooling = ratio > 0;
           return (
             <span
               className={`${styles.player} ${playerColorClassName(playerColorId)} ${
@@ -64,25 +65,29 @@ export function BattleView({
               }`}
               key={participantId}
             >
-              {ratio > 0 ? (
+              <span className={styles.cooldownSlot}>
                 <span
-                  className={styles.cooldownRing}
-                  role="progressbar"
-                  aria-label={`${participantLabel} action cooldown`}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={Math.round(ratio * 100)}
-                  aria-valuetext={`${remainingTicks} ticks remaining`}
+                  className={`${styles.cooldownRing} ${
+                    isCooling ? styles.cooling : ""
+                  }`}
+                  role={isCooling ? "progressbar" : undefined}
+                  aria-label={isCooling
+                    ? `${participantLabel} action cooldown`
+                    : undefined}
+                  aria-valuemin={isCooling ? 0 : undefined}
+                  aria-valuemax={isCooling ? 100 : undefined}
+                  aria-valuenow={isCooling ? Math.round(ratio * 100) : undefined}
+                  aria-valuetext={isCooling
+                    ? `${remainingTicks} ticks remaining`
+                    : undefined}
                   style={{ "--cooldown-progress": ratio } as CSSProperties}
                 >
                   <span className={styles.swatch} aria-hidden="true" />
                 </span>
-              ) : (
-                <>
-                  <span className={styles.swatch} aria-hidden="true" />
+                {!isCooling && (
                   <span className={styles.visuallyHidden}>Ready</span>
-                </>
-              )}
+                )}
+              </span>
               {participantLabel}
               {status === "active" ? "" : ` (${status})`}
             </span>
