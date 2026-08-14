@@ -1,10 +1,15 @@
 import type {
+  AdminBattle,
+  AdminErrorCode,
+  AdminWorldCellReplacement,
   BattleId,
   ChallengeId,
   PlayerId,
   Position,
   RequestId,
   WorldCommandRejectionReason,
+  WorldDelta,
+  WorldSnapshot,
 } from "@grid-game/shared";
 import type { BattleRegistry } from "../game/BattleRegistry.ts";
 import {
@@ -36,6 +41,20 @@ type PendingRuntime = Readonly<{
   challenge: PendingChallenge;
   unsubscribe(): void;
 }>;
+
+export type AdminOperationFailure = Readonly<{
+  ok: false;
+  code: AdminErrorCode;
+  message: string;
+}>;
+
+export type AdminBattleStartResult =
+  | Readonly<{ ok: true; battle: AdminBattle }>
+  | AdminOperationFailure;
+
+export type AdminWorldReplacementResult =
+  | Readonly<{ ok: true; delta: WorldDelta }>
+  | AdminOperationFailure;
 
 /**
  * Serializes every operation spanning connections, World cells, challenges,
@@ -80,6 +99,66 @@ export class WorldCoordinator {
   }
 
   connectedPlayerIds(): readonly PlayerId[] { return this.players.playerIds(); }
+
+  async adminListPlayers(): Promise<readonly PlayerId[]> {
+    return await this.enqueue(() => [...this.players.playerIds()].sort());
+  }
+
+  async adminGetWorld(): Promise<WorldSnapshot> {
+    return await this.enqueue(() => this.world.snapshot());
+  }
+
+  async adminListBattles(): Promise<readonly AdminBattle[]> {
+    return await this.enqueue(() => [...this.battles.entries()]
+      .sort(({ battleId: left }, { battleId: right }) => left.localeCompare(right))
+      .map(({ battleId, battle }) => this.adminBattle(battleId, battle)));
+  }
+
+  async adminStartBattle(
+    playerIds: readonly PlayerId[],
+  ): Promise<AdminBattleStartResult> {
+    return await this.enqueue(() => {
+      if (
+        playerIds.length < 2
+        || playerIds.length > this.maxDebugPlayers
+        || new Set(playerIds).size !== playerIds.length
+      ) {
+        return {
+          ok: false,
+          code: "invalidRoster",
+          message: `Battle roster must contain 2 to ${this.maxDebugPlayers} unique players`,
+        };
+      }
+      const participants = playerIds.map((id) => this.players.get(id));
+      if (participants.some(
+        (participant) => participant === undefined || participant.isClosed,
+      )) {
+        return {
+          ok: false,
+          code: "unknownPlayer",
+          message: "Every battle participant must be connected",
+        };
+      }
+
+      const battle = this.factory.create(playerIds);
+      const battleId = this.registerBattle(battle);
+      for (const participant of participants as ClientConnection[]) {
+        participant.attachBattle(battleId, battle, null);
+      }
+      battle.start();
+      return { ok: true, battle: this.adminBattle(battleId, battle) };
+    });
+  }
+
+  async adminReplaceWorldCells(
+    _changes: readonly AdminWorldCellReplacement[],
+  ): Promise<AdminWorldReplacementResult> {
+    return {
+      ok: false,
+      code: "internal",
+      message: "World replacement is not available",
+    };
+  }
 
   /** Allocates initial cells, sends a converged snapshot, then subscribes. */
   async connect(connection: ClientConnection): Promise<void> {
@@ -338,6 +417,15 @@ export class WorldCoordinator {
     });
     this.terminalUnsubscribers.set(battleId, unsubscribe);
     return battleId;
+  }
+
+  private adminBattle(battleId: BattleId, battle: HostedBattle): AdminBattle {
+    return {
+      battleId,
+      worldPosition: battle.worldPosition,
+      roster: [...battle.getRoster()],
+      snapshot: battle.snapshot,
+    };
   }
 
   private async resolveBattle(

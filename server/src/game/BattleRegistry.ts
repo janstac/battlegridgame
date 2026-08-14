@@ -14,6 +14,14 @@ export class BattleRegistry {
 
   get(battleId: BattleId): HostedBattle | undefined { return this.battles.get(battleId); }
 
+  /** Returns a stable copy of the currently registered battle entries. */
+  entries(): ReadonlyArray<Readonly<{
+    battleId: BattleId;
+    battle: HostedBattle;
+  }>> {
+    return [...this.battles].map(([battleId, battle]) => ({ battleId, battle }));
+  }
+
   /** Unregisters a battle before awaiting its disposal. */
   async remove(battleId: BattleId): Promise<boolean> {
     const battle = this.battles.get(battleId);
