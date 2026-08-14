@@ -8,12 +8,29 @@ export type FlipDelta = Readonly<{
   y: number;
 }>;
 
-export function getFlipDelta(before: FlipRect | undefined, after: FlipRect | undefined): FlipDelta | null {
+export type FlipAxis = "horizontal" | "vertical";
+
+export function getFlipAxis(): FlipAxis {
+  return window.matchMedia("(orientation: portrait)").matches
+    ? "vertical"
+    : "horizontal";
+}
+
+export function getFlipDelta(
+  before: FlipRect | undefined,
+  after: FlipRect | undefined,
+  axis: FlipAxis,
+): FlipDelta | null {
   if (before === undefined || after === undefined) return null;
 
   const x = before.left - after.left;
   const y = before.top - after.top;
-  if (!Number.isFinite(x) || !Number.isFinite(y) || (x === 0 && y === 0)) return null;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
 
-  return { x, y };
+  const amount = axis === "horizontal" ? x : y;
+  if (amount === 0) return null;
+
+  return axis === "horizontal"
+    ? { x: amount, y: 0 }
+    : { x: 0, y: amount };
 }

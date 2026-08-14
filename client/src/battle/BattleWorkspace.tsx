@@ -2,7 +2,12 @@ import type { BattleId } from "@grid-game/shared";
 import { useLayoutEffect, useRef } from "react";
 import type { RefCallback } from "react";
 
-import { getFlipDelta, type FlipRect } from "./battleFlip.ts";
+import {
+  getFlipAxis,
+  getFlipDelta,
+  type FlipAxis,
+  type FlipRect,
+} from "./battleFlip.ts";
 import { BattleTile, type BattleTileModel } from "./BattleTile.tsx";
 import styles from "./BattleWorkspace.module.css";
 
@@ -13,6 +18,7 @@ type PendingMove = Readonly<{
   before: ReadonlyMap<BattleId, FlipRect>;
   battleId: BattleId;
   direction: -1 | 1;
+  axis: FlipAxis;
 }>;
 
 export function BattleWorkspace({
@@ -60,6 +66,7 @@ export function BattleWorkspace({
       return;
     }
 
+    const axis = getFlipAxis();
     const before = new Map<BattleId, FlipRect>();
     for (const [id, node] of tilesRef.current) {
       if (!node.isConnected) continue;
@@ -68,7 +75,7 @@ export function BattleWorkspace({
     }
 
     cancelAnimationRef.current?.();
-    pendingMoveRef.current = { before, battleId, direction };
+    pendingMoveRef.current = { before, battleId, direction, axis };
     onMove(battleId, direction);
   };
 
@@ -84,7 +91,11 @@ export function BattleWorkspace({
       if (!node.isConnected) continue;
 
       const rect = node.getBoundingClientRect();
-      const delta = getFlipDelta(pending.before.get(battleId), { left: rect.left, top: rect.top });
+      const delta = getFlipDelta(
+        pending.before.get(battleId),
+        { left: rect.left, top: rect.top },
+        pending.axis,
+      );
       if (delta === null) continue;
 
       node.style.transition = "none";
@@ -134,7 +145,23 @@ export function BattleWorkspace({
     cancelAnimationRef.current = cleanup;
   });
 
-  useLayoutEffect(() => () => cancelAnimationRef.current?.(), []);
+  useLayoutEffect(() => {
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const cancelAndDiscardPending = () => {
+      pendingMoveRef.current = null;
+      cancelAnimationRef.current?.();
+    };
+
+    reducedMotion.addEventListener("change", cancelAndDiscardPending);
+    window.addEventListener("resize", cancelAndDiscardPending);
+    window.addEventListener("orientationchange", cancelAndDiscardPending);
+    return () => {
+      reducedMotion.removeEventListener("change", cancelAndDiscardPending);
+      window.removeEventListener("resize", cancelAndDiscardPending);
+      window.removeEventListener("orientationchange", cancelAndDiscardPending);
+      cancelAndDiscardPending();
+    };
+  }, []);
 
   if (visible.length === 0) {
     return <p className={styles.empty}>You are not participating in any active battles.</p>;
