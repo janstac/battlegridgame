@@ -34,6 +34,27 @@ export type NetworkClientOptions = Readonly<{
   requestIdFactory?: () => RequestId;
 }>;
 
+// Browser-compatible WebSocket close() accepts only 1000 or application codes
+// in the 3000-4999 range. Node's implementation rejects 1008 before closing.
+const CLIENT_PROTOCOL_ERROR_CLOSE_CODE = 4000;
+
+function closeSocket(
+  socket: NetworkWebSocket,
+  code?: number,
+  reason?: string,
+): void {
+  try {
+    socket.close(code, reason);
+  } catch {
+    // A transport failure must not prevent connection rejection/termination.
+    try { socket.close(); } catch { /* The socket is already unusable. */ }
+  }
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 /** Owns one multiplexed socket and all remote battle sessions on it. */
 export class NetworkClient {
   readonly playerId: PlayerId;
@@ -72,8 +93,12 @@ export class NetworkClient {
           socket.send(JSON.stringify({ type: "connectAsPlayer" }));
           roleSent = true;
         } catch (error) {
-          socket.close(1008, "player role handshake failed");
           if (!settled) reject(error);
+          closeSocket(
+            socket,
+            CLIENT_PROTOCOL_ERROR_CLOSE_CODE,
+            "player role handshake failed",
+          );
         }
       };
       socket.addEventListener("open", identifyAsPlayer);
@@ -90,13 +115,30 @@ export class NetworkClient {
           }
           client.receive(message);
         } catch (error) {
-          socket.close(1008, "invalid server message");
-          if (!settled) reject(error);
+          const failure = asError(error);
+          try {
+            if (client === null) {
+              if (!settled) reject(failure);
+            } else {
+              client.terminate("error", failure);
+            }
+          } finally {
+            closeSocket(
+              socket,
+              CLIENT_PROTOCOL_ERROR_CLOSE_CODE,
+              "invalid server message",
+            );
+          }
         }
       });
       socket.addEventListener("error", () => {
-        if (!settled) reject(new Error("WebSocket connection failed"));
-        client?.terminate("error", new Error("WebSocket connection failed"));
+        const failure = new Error("WebSocket connection failed");
+        try {
+          if (!settled) reject(failure);
+          client?.terminate("error", failure);
+        } finally {
+          closeSocket(socket);
+        }
       });
       socket.addEventListener("close", () => {
         if (!settled) reject(new Error("WebSocket closed before connecting"));
@@ -156,15 +198,13 @@ export class NetworkClient {
     if (this.closed) return;
     switch (message.type) {
       case "connected":
-        this.socket.close(1008, "duplicate connected message");
-        return;
+        throw new Error("Received a duplicate connected message");
       case "battleJoined": {
         const localRosterEntry = message.roster.find(
           ({ participantId }) => participantId === message.localParticipantId,
         );
         if (localRosterEntry?.playerId !== this.playerId || this.sessions.has(message.battleId)) {
-          this.socket.close(1008, "invalid battle membership");
-          return;
+          throw new Error("Received invalid battle membership");
         }
         const session = new NetworkBattleSession(
           this,

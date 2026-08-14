@@ -35,6 +35,7 @@ class FakeSocket implements NetworkWebSocket {
   readyState = 0;
   readonly sent: Array<AnonymousNetworkClientMessage | NetworkClientMessage> = [];
   closeCount = 0;
+  closedWith: Readonly<{ code?: number; reason?: string }> | null = null;
   private readonly openListeners: Array<() => void> = [];
   private readonly messageListeners: Array<(event: MessageEvent<unknown>) => void> = [];
   private readonly closeListeners: Array<() => void> = [];
@@ -50,7 +51,14 @@ class FakeSocket implements NetworkWebSocket {
     if (this.readyState !== 1) throw new Error("Socket is not open");
     this.sent.push(JSON.parse(data) as AnonymousNetworkClientMessage | NetworkClientMessage);
   }
-  close(): void { this.closeCount += 1; this.readyState = 3; }
+  close(code?: number, reason?: string): void {
+    this.closeCount += 1;
+    this.closedWith = {
+      ...(code === undefined ? {} : { code }),
+      ...(reason === undefined ? {} : { reason }),
+    };
+    this.readyState = 3;
+  }
   emitOpen(): void {
     this.readyState = 1;
     for (const listener of this.openListeners) listener();
@@ -125,6 +133,18 @@ test("rejects a connection closed before player role confirmation", async () => 
   await assert.rejects(pending, /closed before connecting/);
 });
 
+test("actively closes a socket that errors before player role confirmation", async () => {
+  const socket = new FakeSocket();
+  const pending = NetworkClient.connect("ws://example/ws", {
+    webSocketFactory: () => socket,
+  });
+
+  socket.emitError();
+
+  await assert.rejects(pending, /WebSocket connection failed/);
+  assert.equal(socket.closeCount, 1);
+});
+
 test("rejects a non-player first server message", async () => {
   const socket = new FakeSocket();
   const pending = NetworkClient.connect("ws://example/ws", {
@@ -134,6 +154,10 @@ test("rejects a non-player first server message", async () => {
   socket.emit({ type: "worldSnapshot", snapshot: worldSnapshot() });
   await assert.rejects(pending, /First server message must be connected/);
   assert.equal(socket.closeCount, 1);
+  assert.deepEqual(socket.closedWith, {
+    code: 4000,
+    reason: "invalid server message",
+  });
 });
 
 test("creates unsolicited sessions automatically, buffers deltas, routes, and leaves one battle", async () => {
@@ -208,6 +232,29 @@ test("publishes a socket error only once when close follows it", async () => {
   if (event?.type !== "connectionClosed") assert.fail("Expected connectionClosed event");
   assert.equal(event.reason, "error");
   assert.match(event.error?.message ?? "", /WebSocket connection failed/);
+  assert.equal(socket.closeCount, 1);
+});
+
+test("terminates and closes immediately on an invalid established server message", async () => {
+  const { client, socket } = await connectFake();
+  const events: NetworkClientEvent[] = [];
+  client.subscribe((event) => events.push(event));
+
+  socket.emit({ type: "connected", playerId: "player-1" });
+
+  assert.equal(events.length, 1);
+  const event = events[0];
+  assert.equal(event?.type, "connectionClosed");
+  if (event?.type !== "connectionClosed") assert.fail("Expected connectionClosed event");
+  assert.equal(event.reason, "error");
+  assert.match(event.error?.message ?? "", /duplicate connected/i);
+  assert.deepEqual(socket.closedWith, {
+    code: 4000,
+    reason: "invalid server message",
+  });
+
+  socket.emitClose();
+  assert.equal(events.length, 1);
 });
 
 test("intentional close publishes its reason and terminates joined sessions", async () => {
