@@ -64,18 +64,25 @@ export function BattleView({
               }`}
               key={participantId}
             >
-              <span
-                className={styles.cooldownRing}
-                role="progressbar"
-                aria-label={`${participantLabel} action cooldown`}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(ratio * 100)}
-                aria-valuetext={remainingTicks > 0 ? `${remainingTicks} ticks remaining` : "Ready"}
-                style={{ "--cooldown-progress": ratio } as CSSProperties}
-              >
-                <span className={styles.swatch} aria-hidden="true" />
-              </span>
+              {ratio > 0 ? (
+                <span
+                  className={styles.cooldownRing}
+                  role="progressbar"
+                  aria-label={`${participantLabel} action cooldown`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(ratio * 100)}
+                  aria-valuetext={`${remainingTicks} ticks remaining`}
+                  style={{ "--cooldown-progress": ratio } as CSSProperties}
+                >
+                  <span className={styles.swatch} aria-hidden="true" />
+                </span>
+              ) : (
+                <>
+                  <span className={styles.swatch} aria-hidden="true" />
+                  <span className={styles.visuallyHidden}>Ready</span>
+                </>
+              )}
               {participantLabel}
               {status === "active" ? "" : ` (${status})`}
             </span>

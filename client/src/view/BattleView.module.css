@@ -36,9 +36,10 @@
   flex: none;
   padding: 0.1rem;
   border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--color-surface-raised);
   background: conic-gradient(
     from -90deg,
-    var(--color-accent) calc(var(--cooldown-progress) * 1turn),
+    var(--player-color) calc(var(--cooldown-progress) * 1turn),
     transparent 0
   );
 }
@@ -48,6 +49,18 @@
   height: 0.65rem;
   border-radius: 50%;
   background: var(--player-color);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .winner {

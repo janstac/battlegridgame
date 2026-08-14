@@ -4,6 +4,7 @@ import {
   PENDING_SYMBOL_ID,
   WALL_SYMBOL_ID,
 } from "./BattleSvgDefinitions.tsx";
+import { shouldAnimateCountChange } from "./countAnimation.ts";
 import styles from "./BattleCellView.module.css";
 
 /** Index into the fixed player color palette. */
@@ -61,8 +62,10 @@ export function OccupiedCellView({
   const previousCount = useRef(count);
   const [countAnimationSequence, setCountAnimationSequence] = useState(0);
   useLayoutEffect(() => {
-    if (previousCount.current === count) return;
+    const previousCountValue = previousCount.current;
     previousCount.current = count;
+    if (!shouldAnimateCountChange(previousCountValue, count)) return;
+
     setCountAnimationSequence((sequence) => sequence + 1);
   }, [count]);
 
