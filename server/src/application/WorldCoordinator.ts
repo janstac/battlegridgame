@@ -121,14 +121,6 @@ export class WorldCoordinator {
     playerIds: readonly PlayerId[],
   ): Promise<AdminBattleStartResult> {
     return await this.enqueue(() => {
-      if (!this.debugEnabled) {
-        return {
-          ok: false,
-          code: "invalidRequest",
-          message: "Debug battles are disabled",
-        };
-      }
-
       if (
         playerIds.length < 2
         || playerIds.length > this.maxDebugPlayers

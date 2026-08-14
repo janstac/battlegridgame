@@ -41,7 +41,7 @@ class ManualChallengeClock implements PendingChallengeClock {
   }
 }
 
-async function harness(debugEnabled = true) {
+async function harness() {
   const players = new PlayerDirectory();
   const battles = new BattleRegistry();
   const world = new World({ random: { next: () => 0 } });
@@ -51,7 +51,7 @@ async function harness(debugEnabled = true) {
     battles,
     world,
     new StandardBattleFactory(battleClock),
-    { debugEnabled, challengeClock },
+    { debugEnabled: true, challengeClock },
   );
   const admin = new AdminService(coordinator);
   const connect = async () => {
@@ -172,25 +172,6 @@ test("admin battle start rejects players disconnected before serialized executio
   });
   assert.equal(response.type, "adminError");
   if (response.type === "adminError") assert.equal(response.code, "unknownPlayer");
-  assert.equal(app.battles.entries().length, 0);
-});
-
-test("admin battle start remains disabled when debug battles are disabled", async (t) => {
-  const app = await harness(false);
-  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
-  const first = await app.connect();
-  const second = await app.connect();
-
-  assert.deepEqual(await app.admin.dispatch({
-    type: "adminStartBattle",
-    requestId: "disabled",
-    playerIds: [first.connection.playerId, second.connection.playerId],
-  }), {
-    type: "adminError",
-    requestId: "disabled",
-    code: "invalidRequest",
-    message: "Debug battles are disabled",
-  });
   assert.equal(app.battles.entries().length, 0);
 });
 
