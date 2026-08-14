@@ -4,6 +4,12 @@ import type { CSSProperties } from "react";
 import { logicalViewBox } from "./viewportMath.ts";
 import styles from "./WorldGridView.module.css";
 import { useWorldViewportProjection } from "./WorldViewport.tsx";
+import {
+  isWorldCellActionable,
+  isWorldChallengeCell,
+  worldCellDescription,
+  worldCellLabel,
+} from "./worldCellPresentation.ts";
 
 const WORLD_COLOR_COUNT = 6;
 
@@ -50,10 +56,7 @@ export function WorldGridView({
       <rect className={styles.backdrop} width={width} height={height} />
       {cells.map((cell, index) => {
         const position = { x: index % width, y: Math.floor(index / width) };
-        const actionable = interactive && (
-          (cell.kind === "occupied" && cell.playerId !== localPlayerId)
-          || cell.kind === "challengePending"
-        );
+        const actionable = interactive && isWorldCellActionable(cell, localPlayerId);
         const selected = selectedPosition?.x === position.x
           && selectedPosition.y === position.y;
         const className = [
@@ -63,16 +66,8 @@ export function WorldGridView({
         const style = cell.kind === "occupied"
           ? { "--world-player-color": worldPlayerColor(cell.playerId) } as CSSProperties
           : undefined;
-        const label = cell.kind === "challengePending"
-          ? `${Math.max(0, Math.ceil((cell.closesAt - now) / 1_000))}s`
-          : cell.kind === "battle" ? "⚔" : cell.kind === "occupied" ? "●" : "";
-        const description = cell.kind === "unoccupied"
-          ? `Cell ${position.x + 1}, ${position.y + 1}, unoccupied`
-          : cell.kind === "occupied"
-            ? `Cell ${position.x + 1}, ${position.y + 1}, occupied by ${cell.playerId}`
-            : cell.kind === "challengePending"
-              ? `Cell ${position.x + 1}, ${position.y + 1}, challenge pending with ${cell.participantIds.length} players`
-              : `Cell ${position.x + 1}, ${position.y + 1}, battle with ${cell.playerIds.length} players`;
+        const label = worldCellLabel(cell, now);
+        const description = worldCellDescription(cell, position.x + 1, position.y + 1);
         return (
           <g
             className={className}
@@ -94,7 +89,7 @@ export function WorldGridView({
             {selected && (
               <rect className={styles.selectionOutline} x="0.08" y="0.08" width="0.84" height="0.84" rx="0.08" />
             )}
-            {cell.kind === "challengePending" && cell.participantIds.map((participantId, participantIndex) => (
+            {isWorldChallengeCell(cell) && cell.participantIds.map((participantId, participantIndex) => (
               <circle
                 key={participantId}
                 cx={0.18 + participantIndex * 0.19}

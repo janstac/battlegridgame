@@ -19,7 +19,8 @@
 .actionable:focus-visible .cell { stroke: var(--color-focus); stroke-width: 0.08; }
 
 .occupied .cell { fill: var(--world-player-color); }
-.challengePending .cell { fill: var(--color-world-challenge); }
+.challengePending .cell,
+.challengeWaiting .cell { fill: var(--color-world-challenge); }
 .battle .cell { fill: var(--color-world-battle); }
 
 .selectionOutline {
@@ -38,3 +39,5 @@
   text-anchor: middle;
   pointer-events: none;
 }
+
+.challengeWaiting .label { font-size: 0.18px; }

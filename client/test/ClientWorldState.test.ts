@@ -54,3 +54,44 @@ test("enters resync once on a gap and ignores deltas until replacement", () => {
   assert.equal(world.applyDelta({ fromRevision: 10, revision: 11, changes: [] }), true);
   assert.equal(world.getSnapshot().snapshot?.revision, 11);
 });
+
+test("projects a waiting challenge into its authoritative countdown replacement", () => {
+  const world = new ClientWorldState();
+  world.replaceSnapshot({
+    revision: 6,
+    grid: {
+      width: 1,
+      height: 1,
+      cells: [{
+        kind: "challengeWaiting",
+        challengeId: "challenge-1",
+        waitingId: 17,
+        defenderId: "defender",
+        participantIds: ["defender", "challenger"],
+      }],
+    },
+  });
+
+  assert.equal(world.applyDelta({
+    fromRevision: 6,
+    revision: 7,
+    changes: [{
+      position: { x: 0, y: 0 },
+      cell: {
+        kind: "challengePending",
+        challengeId: "challenge-1",
+        defenderId: "defender",
+        participantIds: ["defender", "challenger"],
+        closesAt: 25_000,
+      },
+    }],
+  }), true);
+
+  assert.deepEqual(world.getSnapshot().snapshot?.grid.cells[0], {
+    kind: "challengePending",
+    challengeId: "challenge-1",
+    defenderId: "defender",
+    participantIds: ["defender", "challenger"],
+    closesAt: 25_000,
+  });
+});

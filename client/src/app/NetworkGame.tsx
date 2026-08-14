@@ -37,6 +37,9 @@ import {
   WorldCellPopup,
   WorldGridView,
   WorldViewport,
+  isWorldChallengeCell,
+  WAITING_CHALLENGE_DESCRIPTION,
+  worldDetailHeading,
   worldPlayerColor,
 } from "../world/index.ts";
 import styles from "./NetworkGame.module.css";
@@ -108,34 +111,33 @@ function WorldDetail({
   onJoin(challengeId: ChallengeId): void;
   onLeave(challengeId: ChallengeId): void;
 }>) {
+  const challenge = isWorldChallengeCell(cell) ? cell : null;
   return (
     <aside className={styles.worldDetail} aria-live="polite">
       <div>
-        {cell.kind === "unoccupied" && <strong>Unoccupied</strong>}
-        {cell.kind === "occupied" && (
-          <strong>{cell.playerId === localPlayerId ? "Your cell" : `Owned by ${cell.playerId}`}</strong>
+        <strong>{worldDetailHeading(cell, localPlayerId)}</strong>
+        {cell.kind === "challengeWaiting" && (
+          <span className={styles.waitingDescription}>{WAITING_CHALLENGE_DESCRIPTION}</span>
         )}
-        {cell.kind === "challengePending" && <strong>Challenge gathering players</strong>}
-        {cell.kind === "battle" && <strong>Battle in progress</strong>}
       </div>
       {cell.kind === "occupied" && cell.playerId !== localPlayerId && (
         <ActionButton className={styles.challengeAction} type="button" disabled={busy} onClick={onChallenge}>Challenge</ActionButton>
       )}
-      {cell.kind === "challengePending" && (
+      {challenge !== null && (
         <div className={styles.challengeDetail}>
-          <span>{cell.participantIds.length}/4 participants</span>
+          <span>{challenge.participantIds.length}/4 participants</span>
           <div className={styles.roster}>
-            {cell.participantIds.map((playerId) => (
+            {challenge.participantIds.map((playerId) => (
               <span key={playerId}><i style={{ background: worldPlayerColor(playerId) }} />{playerId}</span>
             ))}
           </div>
-          {cell.participantIds.includes(localPlayerId) ? (
-            <ActionButton variant="secondary" type="button" disabled={busy} onClick={() => onLeave(cell.challengeId)}>
+          {challenge.participantIds.includes(localPlayerId) ? (
+            <ActionButton variant="secondary" type="button" disabled={busy} onClick={() => onLeave(challenge.challengeId)}>
               Leave challenge
             </ActionButton>
           ) : (
-            <ActionButton type="button" disabled={busy || cell.participantIds.length >= 4} onClick={() => onJoin(cell.challengeId)}>
-              {cell.participantIds.length >= 4 ? "Challenge full" : "Join challenge"}
+            <ActionButton type="button" disabled={busy || challenge.participantIds.length >= 4} onClick={() => onJoin(challenge.challengeId)}>
+              {challenge.participantIds.length >= 4 ? "Challenge full" : "Join challenge"}
             </ActionButton>
           )}
         </div>

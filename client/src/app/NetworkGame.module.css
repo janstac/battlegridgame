@@ -45,6 +45,7 @@
 }
 .worldDetail > div:first-child { display: grid; gap: .22rem; }
 .worldDetail strong { color: var(--color-text-primary); }
+.waitingDescription { max-width: 13rem; font-size: .82rem; line-height: 1.35; }
 .challengeAction { justify-self: start; padding-inline: .7rem; }
 .challengeDetail { display: grid; gap: .65rem; }
 .roster { display: grid; gap: .35rem; }

@@ -15,11 +15,26 @@ type PendingWorldCommand = Readonly<{
   reject(error: Error): void;
 }>;
 
+function worldCommandRejectionMessage(reason: WorldCommandRejectionReason): string {
+  switch (reason) {
+    case "battleLimitReached":
+      return "You already have the maximum number of concurrent battles. Leave or finish a battle, then try again.";
+    case "invalidTarget":
+    case "selfChallenge":
+    case "unknownChallenge":
+    case "challengeClosed":
+    case "alreadyJoined":
+    case "challengeFull":
+    case "notParticipant":
+      return reason;
+  }
+}
+
 export class WorldCommandRejectedError extends Error {
   readonly reason: WorldCommandRejectionReason;
 
   constructor(reason: WorldCommandRejectionReason) {
-    super(reason);
+    super(worldCommandRejectionMessage(reason));
     this.name = "WorldCommandRejectedError";
     this.reason = reason;
   }

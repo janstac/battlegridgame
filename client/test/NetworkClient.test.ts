@@ -312,6 +312,24 @@ test("correlates accepted and rejected World commands", async () => {
   await client.close();
 });
 
+test("explains battle-limit World command rejections in player-facing language", async () => {
+  const { client, socket } = await connectFake();
+  const join = client.world.joinChallenge("challenge-1");
+  socket.emit({
+    type: "worldCommandRejected",
+    requestId: "request-1",
+    reason: "battleLimitReached",
+  });
+
+  await assert.rejects(join, (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /maximum number of concurrent battles/i);
+    assert.doesNotMatch(error.message, /battleLimitReached/);
+    return true;
+  });
+  await client.close();
+});
+
 test("retains multiple battles and removes only the battle that left", async () => {
   const { client, socket } = await connectFake();
   for (const battleId of ["battle-1", "battle-2"] as const) {
