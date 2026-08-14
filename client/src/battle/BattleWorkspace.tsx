@@ -3,9 +3,7 @@ import { useLayoutEffect, useRef } from "react";
 import type { RefCallback } from "react";
 
 import {
-  getFlipAxis,
   getFlipDelta,
-  type FlipAxis,
   type FlipRect,
 } from "./battleFlip.ts";
 import { BattleTile, type BattleTileModel } from "./BattleTile.tsx";
@@ -18,7 +16,6 @@ type PendingMove = Readonly<{
   before: ReadonlyMap<BattleId, FlipRect>;
   battleId: BattleId;
   direction: -1 | 1;
-  axis: FlipAxis;
 }>;
 
 export function BattleWorkspace({
@@ -66,16 +63,15 @@ export function BattleWorkspace({
       return;
     }
 
-    const axis = getFlipAxis();
     const before = new Map<BattleId, FlipRect>();
     for (const [id, node] of tilesRef.current) {
       if (!node.isConnected) continue;
       const rect = node.getBoundingClientRect();
-      before.set(id, { left: rect.left, top: rect.top });
+      before.set(id, { top: rect.top });
     }
 
     cancelAnimationRef.current?.();
-    pendingMoveRef.current = { before, battleId, direction, axis };
+    pendingMoveRef.current = { before, battleId, direction };
     onMove(battleId, direction);
   };
 
@@ -93,8 +89,7 @@ export function BattleWorkspace({
       const rect = node.getBoundingClientRect();
       const delta = getFlipDelta(
         pending.before.get(battleId),
-        { left: rect.left, top: rect.top },
-        pending.axis,
+        { top: rect.top },
       );
       if (delta === null) continue;
 

@@ -1,13 +1,14 @@
 .workspace {
   display: flex;
+  flex-direction: column;
   align-items: start;
   gap: .75rem;
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
   padding: .15rem .15rem .65rem;
 }
 .tile {
-  flex: 0 0 min(46rem, var(--battle-lane-size, calc(100vw - 2rem)), calc(100dvh - 6rem));
+  flex: 0 0 auto;
+  width: 100%;
   min-width: 0;
   border-radius: var(--radius-panel);
   background: var(--color-surface-deep);
@@ -35,16 +36,3 @@
 .tileActions button:disabled { opacity: .35; cursor: default; }
 .tileActions .leave { padding-inline: .6rem; color: var(--color-error-text); border-color: var(--color-error-border); }
 .empty { padding: 2rem; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-panel); color: var(--color-text-muted); text-align: center; }
-
-@media (orientation: portrait) {
-  .workspace {
-    flex-direction: column;
-    width: 100%;
-    padding: .15rem .65rem .15rem .15rem;
-  }
-
-  .tile {
-    flex: 0 0 auto;
-    width: 100%;
-  }
-}

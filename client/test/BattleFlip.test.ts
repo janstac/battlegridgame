@@ -3,45 +3,22 @@ import test from "node:test";
 
 import { getFlipDelta } from "../src/battle/battleFlip.ts";
 
-test("getFlipDelta uses only the horizontal displacement for landscape", () => {
+test("getFlipDelta uses only vertical displacement at every viewport size", () => {
   assert.deepEqual(
-    getFlipDelta({ left: 12, top: 20 }, { left: 40, top: 55 }, "horizontal"),
-    { x: -28, y: 0 },
-  );
-  assert.equal(
-    getFlipDelta({ left: 12, top: 20 }, { left: 12, top: 55 }, "horizontal"),
-    null,
-  );
-});
-
-test("getFlipDelta uses only the vertical displacement for portrait", () => {
-  assert.deepEqual(
-    getFlipDelta({ left: 12, top: 20 }, { left: 40, top: 55 }, "vertical"),
+    getFlipDelta({ top: 20 }, { top: 55 }),
     { x: 0, y: -35 },
   );
   assert.equal(
-    getFlipDelta({ left: 12, top: 20 }, { left: 40, top: 20 }, "vertical"),
+    getFlipDelta({ top: 20 }, { top: 20 }),
     null,
   );
 });
 
 test("getFlipDelta skips missing and invalid measurements", () => {
-  assert.equal(getFlipDelta(undefined, { left: 12, top: 20 }, "horizontal"), null);
-  assert.equal(getFlipDelta({ left: 12, top: 20 }, undefined, "vertical"), null);
+  assert.equal(getFlipDelta(undefined, { top: 20 }), null);
+  assert.equal(getFlipDelta({ top: 20 }, undefined), null);
   assert.equal(
-    getFlipDelta(
-      { left: Number.NaN, top: 20 },
-      { left: 12, top: 20 },
-      "horizontal",
-    ),
-    null,
-  );
-  assert.equal(
-    getFlipDelta(
-      { left: 12, top: 20 },
-      { left: 12, top: Number.POSITIVE_INFINITY },
-      "vertical",
-    ),
+    getFlipDelta({ top: 20 }, { top: Number.POSITIVE_INFINITY }),
     null,
   );
 });

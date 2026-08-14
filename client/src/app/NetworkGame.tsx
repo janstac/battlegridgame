@@ -6,7 +6,16 @@ import type {
   Position,
   WorldCell,
 } from "@grid-game/shared";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type RefObject,
+} from "react";
 
 import {
   BattleWorkspace,
@@ -31,6 +40,16 @@ import {
   worldPlayerColor,
 } from "../world/index.ts";
 import styles from "./NetworkGame.module.css";
+import {
+  createWorldDisclosureState,
+  getCompactWorldMode,
+  reduceWorldDisclosure,
+  subscribeToCompactWorldMode,
+  WorldDisclosureRegion,
+  type WorldDisclosureState,
+} from "./worldDisclosure.ts";
+
+const WORLD_PANEL_ID = "network-world-panel";
 
 type ConnectionState =
   | { kind: "connecting" }
@@ -60,6 +79,14 @@ function createBattleModel(session: NetworkBattleSession): BattleTileModel {
 
 function useWorldState(world: ClientWorldState) {
   return useSyncExternalStore(world.subscribe, world.getSnapshot, world.getSnapshot);
+}
+
+function useCompactWorldMode() {
+  return useSyncExternalStore(
+    subscribeToCompactWorldMode,
+    getCompactWorldMode,
+    () => false,
+  );
 }
 
 function positionIndex(position: Position, width: number): number {
@@ -134,6 +161,10 @@ function NetworkViewer({
   order,
   now,
   onMove,
+  disclosure,
+  onToggleWorld,
+  worldPanelRef,
+  worldToggleRef,
 }: Readonly<{
   world: NetworkClient["world"];
   localPlayerId: PlayerId;
@@ -141,6 +172,10 @@ function NetworkViewer({
   order: readonly BattleId[];
   now: number;
   onMove(battleId: BattleId, direction: -1 | 1): void;
+  disclosure: WorldDisclosureState;
+  onToggleWorld(): void;
+  worldPanelRef: RefObject<HTMLElement | null>;
+  worldToggleRef: RefObject<HTMLButtonElement | null>;
 }>) {
   const state = useWorldState(world.state);
   const [selected, setSelected] = useState<Position | null>(null);
@@ -160,7 +195,16 @@ function NetworkViewer({
   };
   return (
     <div className={styles.surface}>
-      <section className={styles.worldPanel}>
+      <WorldDisclosureRegion
+        state={disclosure}
+        panelId={WORLD_PANEL_ID}
+        panelClassName={styles.worldPanel}
+        toggleClassName={styles.worldToggle}
+        statusClassName={styles.worldStatus}
+        panelRef={worldPanelRef}
+        toggleRef={worldToggleRef}
+        onToggle={onToggleWorld}
+      >
         {state.resyncing && <StatusNotice kind="progress">Resynchronizing the World…</StatusNotice>}
         {error !== null && <StatusNotice kind="error">{error}</StatusNotice>}
         <div className={styles.worldLayout}>
@@ -191,7 +235,7 @@ function NetworkViewer({
             )}
           </WorldViewport>
         </div>
-      </section>
+      </WorldDisclosureRegion>
       <div className={styles.battleTrack}>
         <BattleWorkspace
           battles={battles}
@@ -213,10 +257,19 @@ export function NetworkGame() {
   const [battles, setBattles] = useState<ReadonlyMap<BattleId, BattleTileModel>>(new Map());
   const [battleOrder, setBattleOrder] = useState<readonly BattleId[]>([]);
   const [now, setNow] = useState(Date.now());
+  const compactWorld = useCompactWorldMode();
+  const [worldDisclosure, dispatchWorldDisclosure] = useReducer(
+    reduceWorldDisclosure,
+    createWorldDisclosureState(compactWorld ? "compact" : "desktop"),
+  );
   const generationRef = useRef(0);
   const clientRef = useRef<NetworkClient | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const battlesRef = useRef(new Map<BattleId, BattleTileModel>());
+  const worldPanelRef = useRef<HTMLElement>(null);
+  const worldToggleRef = useRef<HTMLButtonElement>(null);
+  const focusToggleAfterCollapseRef = useRef(false);
+  const handledAutoCollapseRef = useRef(worldDisclosure.autoCollapseVersion);
 
   const releaseResources = useCallback(() => {
     unsubscribeRef.current?.();
@@ -290,6 +343,27 @@ export function NetworkGame() {
     return () => globalThis.clearInterval(timer);
   }, []);
 
+  useLayoutEffect(() => {
+    const willAutomaticallyCollapse = compactWorld
+      && battles.size > worldDisclosure.battleCount;
+    const activeElement = document.activeElement;
+    focusToggleAfterCollapseRef.current = willAutomaticallyCollapse
+      && activeElement !== null
+      && (worldPanelRef.current?.contains(activeElement) ?? false);
+    dispatchWorldDisclosure({
+      type: "sync",
+      mode: compactWorld ? "compact" : "desktop",
+      battleCount: battles.size,
+    });
+  }, [battles.size, compactWorld]);
+
+  useLayoutEffect(() => {
+    if (handledAutoCollapseRef.current === worldDisclosure.autoCollapseVersion) return;
+    handledAutoCollapseRef.current = worldDisclosure.autoCollapseVersion;
+    if (focusToggleAfterCollapseRef.current) worldToggleRef.current?.focus();
+    focusToggleAfterCollapseRef.current = false;
+  }, [worldDisclosure.autoCollapseVersion]);
+
   const ready = connection.kind === "ready" ? connection.client : null;
   return (
     <GamePage header={false} fullWidth>
@@ -307,6 +381,10 @@ export function NetworkGame() {
           battles={battles}
           order={battleOrder}
           now={now}
+          disclosure={worldDisclosure}
+          onToggleWorld={() => dispatchWorldDisclosure({ type: "toggle" })}
+          worldPanelRef={worldPanelRef}
+          worldToggleRef={worldToggleRef}
           onMove={(battleId, direction) => setBattleOrder((current) => moveBattle(current, battleId, direction))}
         />
       )}
