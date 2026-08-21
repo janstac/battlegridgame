@@ -28,6 +28,19 @@ test("battle controls are rendered by the inner panel and moves appear above two
   assert.doesNotMatch(workspaceStyles, /\.tileActions|\.leave/);
 });
 
+test("player labels and controls share one responsive panel header", () => {
+  assert.match(viewSource, /className=\{styles\.panelHeader\}/);
+  assert.match(
+    viewSource,
+    /className=\{styles\.panelHeader\}[\s\S]*className=\{styles\.playerLegend\}[\s\S]*className=\{styles\.controls\}/,
+  );
+  const headerRule = viewStyles.match(/\.panelHeader\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(headerRule, /display:\s*flex/);
+  assert.match(headerRule, /align-items:\s*flex-start/);
+  assert.match(headerRule, /min-width:\s*0/);
+  assert.doesNotMatch(viewStyles, /\.controls\s*\{[^}]*position:\s*absolute/);
+});
+
 test("leaving requires an in-panel accessible confirmation", () => {
   assert.match(viewSource, /setConfirmingLeave\(true\)/);
   assert.match(viewSource, /controls !== undefined && confirmingLeave/);

@@ -87,6 +87,19 @@ test("battle panels give all remaining width and height to the square grid", () 
   assert.match(gridRule, /max-height:\s*100%/);
 });
 
+test("battle headers stay aligned and compact in every orientation", () => {
+  const headerRule = battleViewStyles.match(/\.panelHeader\s*\{([^}]*)\}/)?.[1] ?? "";
+  const legendRule = battleViewStyles.match(/\.playerLegend\s*\{([^}]*)\}/)?.[1] ?? "";
+  const playerRule = battleViewStyles.match(/\.player\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(headerRule, /display:\s*flex/);
+  assert.match(headerRule, /align-items:\s*flex-start/);
+  assert.match(legendRule, /flex:\s*1 1 auto/);
+  assert.match(playerRule, /font-size:\s*0\.74rem/);
+  assert.match(playerRule, /line-height:\s*1\.15/);
+  assert.match(battleViewStyles, /\.playerLabel\s*\{[^}]*overflow-wrap:\s*anywhere/);
+  assert.doesNotMatch(battleViewStyles, /\.controls\s*\{[^}]*position:\s*absolute/);
+});
+
 function viewportMatchMedia(width: number, height: number): MatchMedia {
   return (query) => ({
     matches: query === COMPACT_WORLD_QUERY && (height > width || width <= 56 * 16),

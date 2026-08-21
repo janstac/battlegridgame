@@ -94,91 +94,95 @@ export function BattleView({
 
   return (
     <section className={styles.panel}>
-      {controls !== undefined && (
-        <div className={styles.controls}>
-          {controls.showMoveButtons && (
-            <>
-              <button
-                type="button"
-                disabled={!controls.canMoveEarlier}
-                onClick={() => controls.onMove(-1)}
-                aria-label={`Move ${controls.battleLabel} earlier`}
+      <div className={styles.panelHeader}>
+        <div className={styles.playerLegend}>
+          {snapshot.participants.map(({ participantId, status }) => {
+            const playerColorId = participantColorIds.get(participantId);
+            if (playerColorId === undefined) {
+              throw new Error(`Missing color ID for participant ${participantId}`);
+            }
+            const participantLabel = participantLabels?.get(participantId)
+              ?? `Player ${participantId + 1}`;
+            const { remainingTicks, ratio } = cooldownProgress(
+              snapshot.cooldowns.find((entry) => entry.participantId === participantId),
+              state.estimatedTick,
+            );
+            const isCooling = ratio > 0;
+            return (
+              <span
+                className={`${styles.player} ${playerColorClassName(playerColorId)} ${
+                  participantId === state.localParticipantId ? styles.activePlayer : ""
+                }`}
+                key={participantId}
               >
-                ↑
-              </button>
-              <button
-                type="button"
-                disabled={!controls.canMoveLater}
-                onClick={() => controls.onMove(1)}
-                aria-label={`Move ${controls.battleLabel} later`}
-              >
-                ↓
-              </button>
-            </>
-          )}
-          <button
-            ref={leaveButtonRef}
-            type="button"
-            className={styles.leave}
-            onClick={() => {
-              closingConfirmationRef.current = false;
-              setConfirmingLeave(true);
-            }}
-            aria-label={`Leave ${controls.battleLabel}`}
-          >
-            ×
-          </button>
-        </div>
-      )}
-
-      <div className={styles.playerLegend}>
-        {snapshot.participants.map(({ participantId, status }) => {
-          const playerColorId = participantColorIds.get(participantId);
-          if (playerColorId === undefined) {
-            throw new Error(`Missing color ID for participant ${participantId}`);
-          }
-          const participantLabel = participantLabels?.get(participantId)
-            ?? `Player ${participantId + 1}`;
-          const { remainingTicks, ratio } = cooldownProgress(
-            snapshot.cooldowns.find((entry) => entry.participantId === participantId),
-            state.estimatedTick,
-          );
-          const isCooling = ratio > 0;
-          return (
-            <span
-              className={`${styles.player} ${playerColorClassName(playerColorId)} ${
-                participantId === state.localParticipantId ? styles.activePlayer : ""
-              }`}
-              key={participantId}
-            >
-              <span className={styles.cooldownSlot}>
-                <span
-                  className={`${styles.cooldownRing} ${
-                    isCooling ? styles.cooling : ""
-                  }`}
-                  role={isCooling ? "progressbar" : undefined}
-                  aria-label={isCooling
-                    ? `${participantLabel} action cooldown`
-                    : undefined}
-                  aria-valuemin={isCooling ? 0 : undefined}
-                  aria-valuemax={isCooling ? 100 : undefined}
-                  aria-valuenow={isCooling ? Math.round(ratio * 100) : undefined}
-                  aria-valuetext={isCooling
-                    ? `${remainingTicks} ticks remaining`
-                    : undefined}
-                  style={{ "--cooldown-progress": ratio } as CSSProperties}
-                >
-                  <span className={styles.swatch} aria-hidden="true" />
+                <span className={styles.cooldownSlot}>
+                  <span
+                    className={`${styles.cooldownRing} ${
+                      isCooling ? styles.cooling : ""
+                    }`}
+                    role={isCooling ? "progressbar" : undefined}
+                    aria-label={isCooling
+                      ? `${participantLabel} action cooldown`
+                      : undefined}
+                    aria-valuemin={isCooling ? 0 : undefined}
+                    aria-valuemax={isCooling ? 100 : undefined}
+                    aria-valuenow={isCooling ? Math.round(ratio * 100) : undefined}
+                    aria-valuetext={isCooling
+                      ? `${remainingTicks} ticks remaining`
+                      : undefined}
+                    style={{ "--cooldown-progress": ratio } as CSSProperties}
+                  >
+                    <span className={styles.swatch} aria-hidden="true" />
+                  </span>
+                  {!isCooling && (
+                    <span className={styles.visuallyHidden}>Ready</span>
+                  )}
                 </span>
-                {!isCooling && (
-                  <span className={styles.visuallyHidden}>Ready</span>
-                )}
+                <span className={styles.playerLabel}>
+                  {participantLabel}
+                  {status === "active" ? "" : ` (${status})`}
+                </span>
               </span>
-              {participantLabel}
-              {status === "active" ? "" : ` (${status})`}
-            </span>
-          );
-        })}
+            );
+          })}
+        </div>
+
+        {controls !== undefined && (
+          <div className={styles.controls}>
+            {controls.showMoveButtons && (
+              <>
+                <button
+                  type="button"
+                  disabled={!controls.canMoveEarlier}
+                  onClick={() => controls.onMove(-1)}
+                  aria-label={`Move ${controls.battleLabel} earlier`}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  disabled={!controls.canMoveLater}
+                  onClick={() => controls.onMove(1)}
+                  aria-label={`Move ${controls.battleLabel} later`}
+                >
+                  ↓
+                </button>
+              </>
+            )}
+            <button
+              ref={leaveButtonRef}
+              type="button"
+              className={styles.leave}
+              onClick={() => {
+                closingConfirmationRef.current = false;
+                setConfirmingLeave(true);
+              }}
+              aria-label={`Leave ${controls.battleLabel}`}
+            >
+              ×
+            </button>
+          </div>
+        )}
       </div>
 
       {snapshot.status.kind === "finished" && (
