@@ -67,7 +67,7 @@ export function BattleWorkspace({
     for (const [id, node] of tilesRef.current) {
       if (!node.isConnected) continue;
       const rect = node.getBoundingClientRect();
-      before.set(id, { top: rect.top });
+      before.set(id, { left: rect.left, top: rect.top });
     }
 
     cancelAnimationRef.current?.();
@@ -89,7 +89,7 @@ export function BattleWorkspace({
       const rect = node.getBoundingClientRect();
       const delta = getFlipDelta(
         pending.before.get(battleId),
-        { top: rect.top },
+        { left: rect.left, top: rect.top },
       );
       if (delta === null) continue;
 

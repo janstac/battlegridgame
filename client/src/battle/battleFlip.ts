@@ -1,4 +1,5 @@
 export type FlipRect = Readonly<{
+  left: number;
   top: number;
 }>;
 
@@ -13,8 +14,9 @@ export function getFlipDelta(
 ): FlipDelta | null {
   if (before === undefined || after === undefined) return null;
 
+  const x = before.left - after.left;
   const y = before.top - after.top;
-  if (!Number.isFinite(y) || y === 0) return null;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || (x === 0 && y === 0)) return null;
 
-  return { x: 0, y };
+  return { x, y };
 }

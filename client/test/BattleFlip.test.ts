@@ -3,22 +3,25 @@ import test from "node:test";
 
 import { getFlipDelta } from "../src/battle/battleFlip.ts";
 
-test("getFlipDelta uses only vertical displacement at every viewport size", () => {
+test("getFlipDelta supports movement across columns and rows", () => {
   assert.deepEqual(
-    getFlipDelta({ top: 20 }, { top: 55 }),
-    { x: 0, y: -35 },
+    getFlipDelta({ left: 10, top: 20 }, { left: 45, top: 55 }),
+    { x: -35, y: -35 },
   );
   assert.equal(
-    getFlipDelta({ top: 20 }, { top: 20 }),
+    getFlipDelta({ left: 10, top: 20 }, { left: 10, top: 20 }),
     null,
   );
 });
 
 test("getFlipDelta skips missing and invalid measurements", () => {
-  assert.equal(getFlipDelta(undefined, { top: 20 }), null);
-  assert.equal(getFlipDelta({ top: 20 }, undefined), null);
+  assert.equal(getFlipDelta(undefined, { left: 10, top: 20 }), null);
+  assert.equal(getFlipDelta({ left: 10, top: 20 }, undefined), null);
   assert.equal(
-    getFlipDelta({ top: 20 }, { top: Number.POSITIVE_INFINITY }),
+    getFlipDelta(
+      { left: 10, top: 20 },
+      { left: Number.POSITIVE_INFINITY, top: 20 },
+    ),
     null,
   );
 });
