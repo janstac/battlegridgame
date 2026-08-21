@@ -1,13 +1,16 @@
 .grid {
   display: block;
-  width: 100%;
+  flex: none;
+  width: auto;
   height: 100%;
+  aspect-ratio: 1;
   min-width: 0;
   min-height: 0;
   max-width: 100%;
   max-height: 100%;
   margin: 0 auto;
   filter: drop-shadow(var(--shadow-grid));
+  touch-action: pan-y;
 }
 
 .backdrop {

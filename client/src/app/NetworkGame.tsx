@@ -236,7 +236,7 @@ function NetworkViewer({
           </WorldViewport>
         </div>
       </WorldDisclosureRegion>
-      <div className={styles.battleTrack}>
+      <div className={`${styles.battleTrack} ${battles.size > 0 ? styles.activeBattleTrack : ""}`}>
         <BattleWorkspace
           battles={battles}
           order={order}
@@ -369,6 +369,7 @@ export function NetworkGame() {
     <GamePage
       header={false}
       fullWidth
+      fillViewport
       leadingAction={(
         <WorldDisclosureToggle
           state={worldDisclosure}

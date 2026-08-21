@@ -1,13 +1,14 @@
 .reconnectAction { margin-top: 1rem; }
 .surface {
   --world-size: min(42rem, 46vw, calc(100dvh - 7rem));
-  --layout-gap: 1rem;
+  --layout-gap: .5rem;
   display: grid;
   grid-template-columns: minmax(0, var(--world-size)) minmax(0, 1fr);
   align-items: flex-start;
   gap: var(--layout-gap);
   width: 100%;
-  height: calc(100dvh - 5.25rem);
+  max-width: 100%;
+  height: 100%;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -19,7 +20,8 @@
   inset-block-start: .25rem;
   inset-inline-start: 0;
   min-width: 0;
-  padding: .25rem;
+  max-width: 100%;
+  padding: .15rem;
   background: var(--color-page-background);
   pointer-events: auto;
 }
@@ -28,13 +30,14 @@
 .worldStatus { display: none; }
 .battleTrack {
   min-width: 0;
+  max-width: 100%;
   min-height: 0;
   height: 100%;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: .25rem .25rem .75rem 0;
+  padding: .15rem .15rem .25rem 0;
 }
-.worldLayout { min-width: 0; }
+.worldLayout { width: 100%; min-width: 0; max-width: 100%; }
 .worldDetail {
   display: grid;
   gap: .55rem;
@@ -57,22 +60,25 @@
 .roster i { width: .65rem; height: .65rem; border-radius: 50%; }
 @media (orientation: portrait), (max-width: 56rem) {
   .surface {
-    --world-size: min(42rem, calc(100vw - 1.5rem), 46dvh);
+    --world-size: min(32rem, calc(100vw - 1.25rem), 40dvh);
+    --battle-track-size: calc(100dvh - 3rem);
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    height: calc(100dvh - 5.25rem);
+    height: auto;
     min-height: 0;
-    overflow: auto;
+    overflow: visible;
+    overscroll-behavior: auto;
     scrollbar-gutter: auto;
   }
   .worldToggle {
     display: block;
-    min-height: 2.15rem;
-    padding: 0 .75rem;
+    min-height: 2rem;
+    padding: 0 .55rem;
     border: 1px solid var(--color-border-strong);
     border-radius: var(--radius-medium);
     color: var(--color-text-primary);
+    font-size: .8rem;
     font-weight: 700;
     background: var(--color-surface-interactive);
     cursor: pointer;
@@ -92,16 +98,32 @@
   }
   .worldPanel {
     position: static;
+    flex: none;
     inset-inline-start: auto;
     width: 100%;
   }
   .battleTrack {
-    flex: 1 1 0;
+    flex: none;
     width: 100%;
     min-width: 0;
     min-height: 0;
     height: auto;
-    overflow: auto;
-    padding: 0 0 .75rem;
+    overflow: visible;
+    overscroll-behavior: auto;
+    touch-action: pan-y;
+    padding: 0 0 .25rem;
   }
+  .activeBattleTrack {
+    height: var(--battle-track-size);
+  }
+  .worldDetail {
+    gap: .35rem;
+    max-width: min(12rem, calc(100vw - 3rem));
+    padding: .45rem .5rem;
+    font-size: .78rem;
+  }
+  .waitingDescription { font-size: .74rem; }
+  .challengeDetail { gap: .4rem; }
+  .roster { gap: .2rem; }
+  .roster span { gap: .25rem; font-size: .74rem; }
 }

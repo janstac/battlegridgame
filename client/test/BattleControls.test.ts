@@ -36,7 +36,8 @@ test("player labels and controls share one responsive panel header", () => {
   );
   const headerRule = viewStyles.match(/\.panelHeader\s*\{([^}]*)\}/)?.[1] ?? "";
   assert.match(headerRule, /display:\s*flex/);
-  assert.match(headerRule, /align-items:\s*flex-start/);
+  assert.match(headerRule, /align-items:\s*center/);
+  assert.match(headerRule, /margin-bottom:\s*0/);
   assert.match(headerRule, /min-width:\s*0/);
   assert.doesNotMatch(viewStyles, /\.controls\s*\{[^}]*position:\s*absolute/);
 });
@@ -57,7 +58,7 @@ test("confirmation overlay is centered and scoped to the battle panel", () => {
   const panelRule = viewStyles.match(/\.panel\s*\{([^}]*)\}/)?.[1] ?? "";
   const overlayRule = viewStyles.match(/\.confirmationLayer\s*\{([^}]*)\}/)?.[1] ?? "";
   assert.match(panelRule, /position:\s*relative/);
-  assert.match(panelRule, /overflow:\s*hidden/);
+  assert.match(panelRule, /overflow:\s*clip/);
   assert.match(overlayRule, /position:\s*absolute/);
   assert.match(overlayRule, /inset:\s*0/);
   assert.match(overlayRule, /place-items:\s*center/);

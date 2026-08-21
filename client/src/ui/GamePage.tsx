@@ -8,6 +8,7 @@ type GamePageSharedProps = {
   leadingAction?: ReactNode;
   wide?: boolean;
   fullWidth?: boolean;
+  fillViewport?: boolean;
 };
 
 type GamePageHeaderProps =
@@ -32,6 +33,7 @@ export function GamePage(props: GamePageProps) {
     styles.page,
     props.wide ? styles.wide : undefined,
     props.fullWidth ? styles.fullWidth : undefined,
+    props.fillViewport ? styles.fillViewport : undefined,
   ]
     .filter(Boolean)
     .join(" ");
@@ -52,7 +54,9 @@ export function GamePage(props: GamePageProps) {
           <p className={styles.description}>{props.description}</p>
         </header>
       )}
-      {props.children}
+      {props.fillViewport
+        ? <div className={styles.content}>{props.children}</div>
+        : props.children}
     </main>
   );
 }

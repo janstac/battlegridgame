@@ -14,11 +14,27 @@
   padding-block: 1rem 0;
 }
 
+.fillViewport {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.content { min-width: 0; }
+
+.fillViewport .content {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
 .toolbar {
   display: flex;
+  flex: none;
   align-items: center;
   gap: .75rem;
-  margin-bottom: 1rem;
+  margin-bottom: .5rem;
 }
 
 .leadingAction { min-width: 0; }
@@ -68,5 +84,25 @@
   .fullWidth {
     width: calc(100% - 1rem);
     padding-top: .5rem;
+  }
+}
+
+@media (orientation: portrait), (max-width: 56rem) {
+  .fillViewport {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .fillViewport .content {
+    flex: none;
+  }
+
+  .toolbar {
+    position: sticky;
+    z-index: 5;
+    inset-block-start: 0;
+    gap: .35rem;
+    background: var(--color-page-background);
   }
 }
