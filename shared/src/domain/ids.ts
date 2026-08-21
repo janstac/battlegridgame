@@ -7,6 +7,11 @@ export const PlayerIdSchema = Type.String({ minLength: 1 });
 /** Identifies a player within game and protocol state. */
 export type PlayerId = Type.Static<typeof PlayerIdSchema>;
 
+/** Opaque bearer credential used to resume one logical player session. */
+export const ResumeTokenSchema = Type.String({ minLength: 32, maxLength: 128 });
+/** Authenticates resumption of one server-side player session. */
+export type ResumeToken = Type.Static<typeof ResumeTokenSchema>;
+
 /** Runtime schema for a stable non-negative identifier local to one battle. */
 export const BattleParticipantIdSchema = Type.Integer({
   minimum: 0,
@@ -33,7 +38,9 @@ export const WaitingIdSchema = Type.Integer({
   maximum: SAFE_ID_MAX,
 });
 /** Orders Waiting challenge lifetimes without exposing scheduler internals. */
-export type WaitingId = Type.Static<typeof WaitingIdSchema>;
+export type WaitingId = Type.Static<
+  typeof WaitingIdSchema
+>;
 
 /** Runtime schema for a client-generated request identifier. */
 export const RequestIdSchema = Type.String({ minLength: 1 });

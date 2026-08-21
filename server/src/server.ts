@@ -12,6 +12,7 @@ import type { HostedBattleClock } from "./game/HostedBattle.ts";
 import {
   BattleWebSocketGateway,
   type AdminMessageHandler,
+  type PlayerSessionClock,
 } from "./network/BattleWebSocketGateway.ts";
 import type { PendingChallengeClock } from "./world/PendingChallenge.ts";
 import { World, type RandomSource } from "./world/World.ts";
@@ -25,6 +26,8 @@ export type GridGameServerOptions = Readonly<{
   maxConcurrentBattlesPerPlayer?: number;
   worldRandom?: RandomSource;
   adminMessageHandler?: AdminMessageHandler;
+  playerSessionResumeGraceMs?: number;
+  playerSessionClock?: PlayerSessionClock;
 }>;
 
 export type GridGameServer = Readonly<{
@@ -39,12 +42,9 @@ export type GridGameServer = Readonly<{
 /** Composes the HTTP/WebSocket transport and transport-free application. */
 export function createGridGameServer(options: GridGameServerOptions = {}): GridGameServer {
   const maxConcurrentBattlesPerPlayer = validateMaxConcurrentBattlesPerPlayer(
-    options.maxConcurrentBattlesPerPlayer
-      ?? DEFAULT_MAX_CONCURRENT_BATTLES_PER_PLAYER,
+    options.maxConcurrentBattlesPerPlayer ?? DEFAULT_MAX_CONCURRENT_BATTLES_PER_PLAYER,
   );
-  const httpServer = createServer((_request, response) => {
-    response.writeHead(404).end();
-  });
+  const httpServer = createServer((_request, response) => { response.writeHead(404).end(); });
   const players = new PlayerDirectory();
   const battles = new BattleRegistry();
   const world = new World({
@@ -65,14 +65,16 @@ export function createGridGameServer(options: GridGameServerOptions = {}): GridG
   );
   const admin = new AdminService(coordinator);
   const adminMessageHandler: AdminMessageHandler = options.adminMessageHandler
-    ?? (async (message, output) => {
-      output(await admin.dispatch(message));
-    });
+    ?? (async (message, output) => { output(await admin.dispatch(message)); });
   const gateway = new BattleWebSocketGateway(
     httpServer,
     players,
     coordinator,
     adminMessageHandler,
+    {
+      ...(options.playerSessionResumeGraceMs === undefined ? {} : { resumeGraceMs: options.playerSessionResumeGraceMs }),
+      ...(options.playerSessionClock === undefined ? {} : { sessionClock: options.playerSessionClock }),
+    },
   );
   return {
     httpServer,
