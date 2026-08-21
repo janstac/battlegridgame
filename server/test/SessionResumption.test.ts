@@ -48,6 +48,7 @@ test("a replacement WebSocket resumes the same player and battle session", async
   await Promise.all([first.world.ready, other.world.ready]);
 
   assert.ok(first.resumeToken);
+  assert.equal(first.resumeGraceMs, 1_000);
   const playerId = first.playerId;
   const resumeToken = first.resumeToken;
   const requester = app.server.players.get(playerId);
@@ -70,6 +71,7 @@ test("a replacement WebSocket resumes the same player and battle session", async
   const resumed = await app.connect(resumeToken);
   await resumed.world.ready;
   assert.equal(resumed.playerId, playerId);
+  assert.equal(resumed.resumeGraceMs, 1_000);
   await waitFor(() => resumed.getSession(battleId) !== undefined, "resumed battle snapshot");
   assert.equal(resumed.getSession(battleId)?.battleId, battleId);
 

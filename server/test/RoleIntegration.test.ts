@@ -116,6 +116,7 @@ test("sockets remain anonymous until they select exactly one role", async (t) =>
   assert.equal(connected.type, "connected");
   assert.equal(connected.playerId, "player-1");
   assert.ok(connected.resumeToken);
+  assert.equal(connected.resumeGraceMs, 0);
   const bootstrap = parseNetworkServerMessage(await player.next());
   assert.equal(bootstrap.type, "worldSnapshot");
   assert.deepEqual(app.server.players.playerIds(), ["player-1"]);

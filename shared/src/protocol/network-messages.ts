@@ -46,6 +46,7 @@ export const ConnectedMessageSchema = Type.Object({
   type: Type.Literal("connected"),
   playerId: PlayerIdSchema,
   resumeToken: Type.Optional(ResumeTokenSchema),
+  resumeGraceMs: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
 }, { additionalProperties: false });
 export const ResumeRejectedMessageSchema = Type.Object({ type: Type.Literal("resumeRejected") }, { additionalProperties: false });
 

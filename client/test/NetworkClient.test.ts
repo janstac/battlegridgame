@@ -7,9 +7,11 @@ import type {
 } from "@grid-game/shared";
 import {
   NetworkClient,
+  ResumeRejectedError,
   type NetworkClientEvent,
   type NetworkWebSocket,
 } from "../src/session/NetworkClient.ts";
+import { loadFreshResumeSession } from "../src/session/ResumeTokenStore.ts";
 import { createBattleSnapshot } from "./helpers.ts";
 
 const ROSTER = [
@@ -131,6 +133,78 @@ test("rejects a connection closed before player role confirmation", async () => 
   socket.emitOpen();
   socket.emitClose(1011, "server error", true);
   await assert.rejects(pending, /closed before connecting/);
+});
+
+test("resume rejection falls back to a fresh player by default", async () => {
+  const socket = new FakeSocket();
+  const token = "a".repeat(32);
+  const pending = NetworkClient.connect("ws://example/ws", {
+    webSocketFactory: () => socket,
+    resumeToken: token,
+  });
+  socket.emitOpen();
+  assert.deepEqual(socket.sent, [{ type: "resumePlayer", resumeToken: token }]);
+  socket.emit({ type: "resumeRejected" });
+  assert.deepEqual(socket.sent.at(-1), { type: "connectAsPlayer" });
+  socket.emit({ type: "connected", playerId: "player-2" });
+  const client = await pending;
+  assert.equal(client.playerId, "player-2");
+  await client.close();
+});
+
+test("strict resume rejection rejects without creating a fresh player", async () => {
+  const socket = new FakeSocket();
+  const token = "a".repeat(32);
+  const pending = NetworkClient.connect("ws://example/ws", {
+    webSocketFactory: () => socket,
+    resumeToken: token,
+    resumeFailure: "reject",
+  });
+  socket.emitOpen();
+  socket.emit({ type: "resumeRejected" });
+  await assert.rejects(pending, ResumeRejectedError);
+  assert.deepEqual(socket.sent, [{ type: "resumePlayer", resumeToken: token }]);
+  assert.equal(socket.closeCount, 1);
+});
+
+test("connected resume metadata is marked disconnected on explicit and socket close", async () => {
+  const values = new Map<string, string>();
+  const fakeStorage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
+  } as Storage;
+  const prior = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+  Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: fakeStorage });
+  try {
+    const socket = new FakeSocket();
+    const pending = NetworkClient.connect("ws://example/ws", { webSocketFactory: () => socket });
+    socket.emitOpen();
+    socket.emit({
+      type: "connected", playerId: "player-1",
+      resumeToken: "a".repeat(32), resumeGraceMs: 1_000,
+    });
+    const client = await pending;
+    assert.equal(JSON.parse(values.get("gridgame.resumeSession") ?? "").disconnectedAt, null);
+    await client.close();
+    assert.equal(typeof JSON.parse(values.get("gridgame.resumeSession") ?? "").disconnectedAt, "number");
+
+    const fresh = loadFreshResumeSession();
+    assert.ok(fresh);
+    const secondSocket = new FakeSocket();
+    const secondPending = NetworkClient.connect("ws://example/ws", { webSocketFactory: () => secondSocket });
+    secondSocket.emitOpen();
+    secondSocket.emit({
+      type: "connected", playerId: "player-1",
+      resumeToken: "b".repeat(32), resumeGraceMs: 1_000,
+    });
+    await secondPending;
+    secondSocket.emitClose();
+    assert.equal(typeof JSON.parse(values.get("gridgame.resumeSession") ?? "").disconnectedAt, "number");
+  } finally {
+    if (prior === undefined) delete (globalThis as { sessionStorage?: Storage }).sessionStorage;
+    else Object.defineProperty(globalThis, "sessionStorage", prior);
+  }
 });
 
 test("actively closes a socket that errors before player role confirmation", async () => {

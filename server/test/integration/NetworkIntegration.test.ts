@@ -131,6 +131,7 @@ async function startServer(t: TestContext, maxConcurrentBattlesPerPlayer?: numbe
   const challengeClock = new ManualChallengeClock();
   const server = createGridGameServer({
     debugEnabled: true,
+    playerSessionResumeGraceMs: 0,
     battleClock: clock,
     challengeClock,
     worldRandom: { next: () => 0 },

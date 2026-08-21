@@ -10,7 +10,12 @@ import {
 } from "@grid-game/shared";
 import { NetworkBattleSession } from "./NetworkBattleSession.ts";
 import { NetworkWorldSession } from "./NetworkWorldSession.ts";
-import { loadResumeToken, saveResumeToken } from "./ResumeTokenStore.ts";
+import {
+  clearResumeSession,
+  loadFreshResumeSession,
+  markResumeSessionDisconnected,
+  saveConnectedResumeSession,
+} from "./ResumeTokenStore.ts";
 
 export interface NetworkWebSocket {
   readonly readyState: number;
@@ -34,7 +39,12 @@ export type NetworkClientOptions = Readonly<{
   webSocketFactory?: (url: string) => NetworkWebSocket;
   requestIdFactory?: () => RequestId;
   resumeToken?: ResumeToken;
+  resumeFailure?: "fallback" | "reject";
 }>;
+
+export class ResumeRejectedError extends Error {
+  constructor() { super("The server rejected the saved player session"); this.name = "ResumeRejectedError"; }
+}
 
 const CLIENT_PROTOCOL_ERROR_CLOSE_CODE = 4000;
 
@@ -53,36 +63,52 @@ function socketCloseError(event: Readonly<{ code: number; reason: string; wasCle
   return new Error(`WebSocket closed (${event.code}, ${cleanliness}): ${reason}`);
 }
 
+function createConnectionId(): string {
+  try { if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID(); }
+  catch { /* Fall through for test and restricted browser environments. */ }
+  return `connection-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 /** Owns one multiplexed socket and all remote battle sessions on it. */
 export class NetworkClient {
   readonly playerId: PlayerId;
   readonly resumeToken: ResumeToken | undefined;
+  readonly resumeGraceMs: number | undefined;
   readonly world: NetworkWorldSession;
   private readonly socket: NetworkWebSocket;
   private readonly requestIdFactory: () => RequestId;
+  private readonly connectionId: string;
   private readonly sessions = new Map<BattleId, NetworkBattleSession>();
   private readonly listeners = new Set<(event: NetworkClientEvent) => void>();
   private readonly leaveRequests = new Map<BattleId, () => void>();
   private closed = false;
+  private disconnectRecorded = false;
+  private readonly pagehideListener = () => this.recordDisconnect();
 
   private constructor(
     socket: NetworkWebSocket,
     playerId: PlayerId,
     resumeToken: ResumeToken | undefined,
+    resumeGraceMs: number | undefined,
     requestIdFactory: () => RequestId,
+    connectionId: string,
   ) {
     this.socket = socket;
     this.playerId = playerId;
     this.resumeToken = resumeToken;
+    this.resumeGraceMs = resumeGraceMs;
     this.requestIdFactory = requestIdFactory;
+    this.connectionId = connectionId;
     this.world = new NetworkWorldSession(this);
+    globalThis.addEventListener?.("pagehide", this.pagehideListener);
   }
 
   static async connect(url: string, options: NetworkClientOptions = {}): Promise<NetworkClient> {
     const factory: (target: string) => NetworkWebSocket = options.webSocketFactory
       ?? ((target) => new WebSocket(target));
     const socket = factory(url);
-    const resumeToken = options.resumeToken ?? loadResumeToken() ?? undefined;
+    const resumeToken = options.resumeToken ?? loadFreshResumeSession()?.resumeToken ?? undefined;
+    const resumeFailure = options.resumeFailure ?? "fallback";
     let sequence = 0;
     const requestIdFactory = options.requestIdFactory ?? (() => `${sequence++}`);
     return await new Promise<NetworkClient>((resolve, reject) => {
@@ -114,12 +140,30 @@ export class NetworkClient {
           if (client === null) {
             if (message.type === "resumeRejected") {
               if (resumeToken === undefined || fallbackSent) throw new Error("Unexpected resume rejection");
+              clearResumeSession(resumeToken);
+              if (resumeFailure === "reject") {
+                settled = true;
+                const failure = new ResumeRejectedError();
+                reject(failure);
+                closeSocket(socket, 1000, "resume rejected");
+                return;
+              }
               sendFreshRole();
               return;
             }
             if (message.type !== "connected") throw new Error("First server message must be connected");
-            client = new NetworkClient(socket, message.playerId, message.resumeToken, requestIdFactory);
-            if (message.resumeToken !== undefined) saveResumeToken(message.resumeToken);
+            const connectionId = createConnectionId();
+            client = new NetworkClient(
+              socket, message.playerId, message.resumeToken, message.resumeGraceMs,
+              requestIdFactory, connectionId,
+            );
+            if (message.resumeToken !== undefined && message.resumeGraceMs !== undefined) {
+              saveConnectedResumeSession({
+                resumeToken: message.resumeToken,
+                resumeGraceMs: message.resumeGraceMs,
+                connectionId,
+              });
+            }
             settled = true;
             resolve(client);
             return;
@@ -181,7 +225,10 @@ export class NetworkClient {
 
   async close(): Promise<void> {
     if (this.closed) return;
-    try { this.terminate("client", null); }
+    try {
+      this.recordDisconnect();
+      this.terminate("client", null);
+    }
     finally { this.socket.close(1000, "client closed"); }
   }
 
@@ -251,7 +298,9 @@ export class NetworkClient {
 
   private terminate(reason: "client" | "socket" | "error", error: Error | null): void {
     if (this.closed) return;
+    this.recordDisconnect();
     this.closed = true;
+    globalThis.removeEventListener?.("pagehide", this.pagehideListener);
     const rejection = error ?? new Error("NetworkClient closed");
     for (const session of this.sessions.values()) session.terminate();
     this.world.terminate(rejection);
@@ -260,6 +309,12 @@ export class NetworkClient {
     this.leaveRequests.clear();
     try { this.publish({ type: "connectionClosed", reason, error }); }
     finally { this.listeners.clear(); }
+  }
+
+  private recordDisconnect(): void {
+    if (this.disconnectRecorded) return;
+    this.disconnectRecorded = true;
+    markResumeSessionDisconnected(this.connectionId);
   }
 
   private assertOpen(): void {

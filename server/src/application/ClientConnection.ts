@@ -28,6 +28,7 @@ export type ClientTransport = Readonly<{
 export class ClientConnection {
   readonly playerId: PlayerId;
   readonly resumeToken: ResumeToken;
+  readonly resumeGraceMs: number | undefined;
   private readonly coordinator: WorldCoordinator;
   private readonly memberships = new Map<BattleId, BattleMembership>();
   private transport: ClientTransport | null = null;
@@ -38,7 +39,7 @@ export class ClientConnection {
   private closed = false;
   private lastChallengeable: boolean | undefined;
 
-  constructor(playerId: PlayerId, resumeToken: ResumeToken, coordinator: WorldCoordinator);
+  constructor(playerId: PlayerId, resumeToken: ResumeToken, coordinator: WorldCoordinator, resumeGraceMs?: number);
   constructor(
     playerId: PlayerId,
     coordinator: WorldCoordinator,
@@ -49,19 +50,25 @@ export class ClientConnection {
     playerId: PlayerId,
     resumeTokenOrCoordinator: ResumeToken | WorldCoordinator,
     coordinatorOrOutput: WorldCoordinator | ((message: NetworkServerMessage) => void),
-    protocolViolation?: () => void,
+    protocolViolationOrResumeGraceMs?: (() => void) | number,
   ) {
     this.playerId = playerId;
     if (typeof resumeTokenOrCoordinator === "string") {
       this.resumeToken = resumeTokenOrCoordinator;
       this.coordinator = coordinatorOrOutput as WorldCoordinator;
+      this.resumeGraceMs = typeof protocolViolationOrResumeGraceMs === "number"
+        ? protocolViolationOrResumeGraceMs
+        : undefined;
     } else {
       this.resumeToken = `legacy-session-${playerId}`.padEnd(32, "-");
       this.coordinator = resumeTokenOrCoordinator;
       this.transport = {
         output: coordinatorOrOutput as (message: NetworkServerMessage) => void,
-        protocolViolation: protocolViolation ?? (() => undefined),
+        protocolViolation: typeof protocolViolationOrResumeGraceMs === "function"
+          ? protocolViolationOrResumeGraceMs
+          : (() => undefined),
       };
+      this.resumeGraceMs = undefined;
     }
   }
 
@@ -84,7 +91,7 @@ export class ClientConnection {
   async open(): Promise<void> {
     if (this.closed || this.opened) return;
     this.opened = true;
-    this.send({ type: "connected", playerId: this.playerId, resumeToken: this.resumeToken });
+    this.sendConnected();
     const initialized = this.operations.then(() => this.coordinator.connect(this));
     this.operations = initialized.catch(() => undefined);
     await initialized;
@@ -92,7 +99,7 @@ export class ClientConnection {
 
   async resume(): Promise<void> {
     if (this.closed || !this.opened) return;
-    this.send({ type: "connected", playerId: this.playerId, resumeToken: this.resumeToken });
+    this.sendConnected();
     const resyncing = this.operations.then(async () => {
       if (this.closed) return;
       await this.coordinator.requestWorldSnapshot(this);
@@ -208,6 +215,15 @@ export class ClientConnection {
   }
 
   private send(message: NetworkServerMessage): void { this.transport?.output(message); }
+
+  private sendConnected(): void {
+    this.send({
+      type: "connected",
+      playerId: this.playerId,
+      resumeToken: this.resumeToken,
+      ...(this.resumeGraceMs === undefined ? {} : { resumeGraceMs: this.resumeGraceMs }),
+    });
+  }
 
   private async sendWorldCommandResult(requestId: RequestId, result: Promise<WorldCommandRejectionReason | null>): Promise<void> {
     const reason = await result;

@@ -5,18 +5,24 @@ import { NetworkGame } from "./app/NetworkGame.tsx";
 import styles from "./App.module.css";
 import { ActionButton } from "./ui/ActionButton.tsx";
 import { GamePage } from "./ui/GamePage.tsx";
-
-type AppMode = "local" | "network" | null;
+import { clearResumeSession } from "./session/ResumeTokenStore.ts";
+import { initialAppMode, type AppMode } from "./app/initialAppMode.ts";
 
 /** Chooses between the local demonstration and a server-backed battle. */
 export function App() {
-  const [mode, setMode] = useState<AppMode>(null);
+  const [mode, setMode] = useState<AppMode>(initialAppMode);
 
-  if (mode === "local") {
+  if (mode?.kind === "local") {
     return <LocalGame onBack={() => setMode(null)} />;
   }
-  if (mode === "network") {
-    return <NetworkGame />;
+  if (mode?.kind === "network") {
+    return <NetworkGame
+      resumeOnly={mode.resumeOnly}
+      onResumeRejected={() => {
+        clearResumeSession();
+        setMode(null);
+      }}
+    />;
   }
 
   return (
@@ -34,14 +40,14 @@ export function App() {
         <ActionButton
           className={styles.modeAction}
           type="button"
-          onClick={() => setMode("local")}
+          onClick={() => setMode({ kind: "local" })}
         >
           Play locally
         </ActionButton>
         <ActionButton
           className={styles.modeAction}
           type="button"
-          onClick={() => setMode("network")}
+          onClick={() => setMode({ kind: "network", resumeOnly: false })}
         >
           Play on the network
         </ActionButton>

@@ -139,7 +139,7 @@ export class BattleWebSocketGateway {
           return;
         }
         const connection = this.players.register((playerId, resumeToken) => (
-          new ClientConnection(playerId, resumeToken, this.coordinator)
+          new ClientConnection(playerId, resumeToken, this.coordinator, this.resumeGraceMs)
         ));
         connection.attachTransport(transport);
         this.sessions.set(socket, { role: "player", connection, transport });

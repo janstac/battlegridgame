@@ -26,6 +26,7 @@ import { ClientBattleState, type ClientWorldState } from "../model/index.ts";
 import { getNetworkUrl } from "../network/networkUrl.ts";
 import {
   NetworkClient,
+  ResumeRejectedError,
   type NetworkBattleSession,
   type NetworkClientEvent,
 } from "../session/index.ts";
@@ -252,7 +253,12 @@ function NetworkViewer({
 }
 
 /** Owns the World projection and every battle joined through one connection. */
-export function NetworkGame() {
+export type NetworkGameProps = Readonly<{
+  resumeOnly?: boolean;
+  onResumeRejected?(): void;
+}>;
+
+export function NetworkGame({ resumeOnly = false, onResumeRejected }: NetworkGameProps) {
   const [connection, setConnection] = useState<ConnectionState>({ kind: "connecting" });
   const [battles, setBattles] = useState<ReadonlyMap<BattleId, BattleTileModel>>(new Map());
   const [battleOrder, setBattleOrder] = useState<readonly BattleId[]>([]);
@@ -263,6 +269,7 @@ export function NetworkGame() {
     createWorldDisclosureState(compactWorld ? "compact" : "desktop"),
   );
   const generationRef = useRef(0);
+  const strictResumeRef = useRef(resumeOnly);
   const clientRef = useRef<NetworkClient | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const battlesRef = useRef(new Map<BattleId, BattleTileModel>());
@@ -287,9 +294,12 @@ export function NetworkGame() {
     const generation = ++generationRef.current;
     releaseResources();
     setConnection({ kind: "connecting" });
-    void NetworkClient.connect(getNetworkUrl()).then(async (client) => {
+    void NetworkClient.connect(getNetworkUrl(), {
+      resumeFailure: strictResumeRef.current ? "reject" : "fallback",
+    }).then(async (client) => {
       if (generation !== generationRef.current) return await client.close();
       clientRef.current = client;
+      strictResumeRef.current = false;
       const enterBattle = (session: NetworkBattleSession) => {
         if (generation !== generationRef.current) return;
         try {
@@ -326,9 +336,15 @@ export function NetworkGame() {
       await client.world.ready;
       if (generation === generationRef.current) setConnection({ kind: "ready", client });
     }).catch((error: unknown) => {
-      if (generation === generationRef.current) setConnection({ kind: "error", message: errorMessage(error) });
+      if (generation !== generationRef.current) return;
+      if (error instanceof ResumeRejectedError && strictResumeRef.current && onResumeRejected !== undefined) {
+        strictResumeRef.current = false;
+        onResumeRejected();
+        return;
+      }
+      setConnection({ kind: "error", message: errorMessage(error) });
     });
-  }, [releaseResources]);
+  }, [onResumeRejected, releaseResources]);
 
   useEffect(() => {
     connect();

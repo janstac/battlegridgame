@@ -39,6 +39,18 @@ test("network protocol multiplexes battle-local messages without contaminating s
   assert.deepEqual(parseNetworkServerMessage({
     type: "connected", playerId: "player-1",
   }), { type: "connected", playerId: "player-1" });
+  assert.deepEqual(parseNetworkServerMessage({
+    type: "connected", playerId: "player-1", resumeToken: "a".repeat(32), resumeGraceMs: 30_000,
+  }), { type: "connected", playerId: "player-1", resumeToken: "a".repeat(32), resumeGraceMs: 30_000 });
+  assert.equal(parseNetworkServerMessage({
+    type: "connected", playerId: "player-1", resumeGraceMs: 0,
+  }).type, "connected");
+  assert.throws(() => parseNetworkServerMessage({
+    type: "connected", playerId: "player-1", resumeGraceMs: -1,
+  }));
+  assert.throws(() => parseNetworkServerMessage({
+    type: "connected", playerId: "player-1", resumeGraceMs: 1.5,
+  }));
   assert.throws(() => parseNetworkClientMessage({ ...routed, extra: true }));
 });
 
