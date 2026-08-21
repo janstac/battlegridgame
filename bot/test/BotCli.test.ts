@@ -95,7 +95,8 @@ test("returns nonzero for connection and socket failures without reconnecting", 
     signals: new FakeSignals(),
     writeError: (line) => connectErrors.push(line),
   }), 1);
-  assert.deepEqual(connectErrors, ["connect failed"]);
+  assert.equal(connectErrors.length, 1);
+  assert.match(connectErrors[0] ?? "", /^Error: connect failed\n/);
 
   const client = new FakeCliClient();
   const socketErrors: string[] = [];
@@ -109,7 +110,8 @@ test("returns nonzero for connection and socket failures without reconnecting", 
   await Promise.resolve();
   client.disconnect("socket", new Error("socket failed"));
   assert.equal(await running, 1);
-  assert.deepEqual(socketErrors, ["socket failed"]);
+  assert.equal(socketErrors.length, 1);
+  assert.match(socketErrors[0] ?? "", /^Error: socket failed\n/);
   assert.equal(client.closeCount, 0);
 });
 

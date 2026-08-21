@@ -38,13 +38,13 @@ class FakeSocket implements NetworkWebSocket {
   closedWith: Readonly<{ code?: number; reason?: string }> | null = null;
   private readonly openListeners: Array<() => void> = [];
   private readonly messageListeners: Array<(event: MessageEvent<unknown>) => void> = [];
-  private readonly closeListeners: Array<() => void> = [];
+  private readonly closeListeners: Array<(event: Readonly<{ code: number; reason: string; wasClean: boolean }>) => void> = [];
   private readonly errorListeners: Array<() => void> = [];
 
-  addEventListener(type: "open" | "message" | "close" | "error", listener: ((event: MessageEvent<unknown>) => void) | (() => void)): void {
+  addEventListener(type: "open" | "message" | "close" | "error", listener: ((event: MessageEvent<unknown>) => void) | ((event: Readonly<{ code: number; reason: string; wasClean: boolean }>) => void) | (() => void)): void {
     if (type === "open") this.openListeners.push(listener as () => void);
     else if (type === "message") this.messageListeners.push(listener as (event: MessageEvent<unknown>) => void);
-    else if (type === "close") this.closeListeners.push(listener as () => void);
+    else if (type === "close") this.closeListeners.push(listener as (event: Readonly<{ code: number; reason: string; wasClean: boolean }>) => void);
     else this.errorListeners.push(listener as () => void);
   }
   send(data: string): void {
@@ -66,9 +66,9 @@ class FakeSocket implements NetworkWebSocket {
   emit(message: NetworkServerMessage): void {
     for (const listener of this.messageListeners) listener({ data: JSON.stringify(message) } as MessageEvent<string>);
   }
-  emitClose(): void {
+  emitClose(code = 1006, reason = "", wasClean = false): void {
     this.readyState = 3;
-    for (const listener of this.closeListeners) listener();
+    for (const listener of this.closeListeners) listener({ code, reason, wasClean });
   }
   emitError(): void {
     for (const listener of this.errorListeners) listener();
@@ -129,7 +129,7 @@ test("rejects a connection closed before player role confirmation", async () => 
     webSocketFactory: () => socket,
   });
   socket.emitOpen();
-  socket.emitClose();
+  socket.emitClose(1011, "server error", true);
   await assert.rejects(pending, /closed before connecting/);
 });
 
@@ -200,13 +200,16 @@ test("publishes an unexpected socket close and rejects pending requests", async 
   const challenge = client.world.challengeCell({ x: 1, y: 0 });
   const challengeRejected = assert.rejects(challenge, /WebSocket closed/);
 
-  socket.emitClose();
+  socket.emitClose(1011, "server error", true);
 
   await challengeRejected;
   assert.equal(events.length, 1);
   assert.equal(events[0]?.type, "connectionClosed");
   assert.equal(events[0]?.type === "connectionClosed" && events[0].reason, "socket");
-  assert.match(events[0]?.type === "connectionClosed" ? events[0].error?.message ?? "" : "", /WebSocket closed/);
+  assert.equal(
+    events[0]?.type === "connectionClosed" ? events[0].error?.message : null,
+    "WebSocket closed (1011, clean): server error",
+  );
 });
 
 test("rejects World readiness when the socket closes before bootstrap", async () => {

@@ -16,7 +16,10 @@ export interface NetworkWebSocket {
   readonly readyState: number;
   addEventListener(type: "open", listener: () => void): void;
   addEventListener(type: "message", listener: (event: MessageEvent<unknown>) => void): void;
-  addEventListener(type: "close", listener: () => void): void;
+  addEventListener(
+    type: "close",
+    listener: (event: Readonly<{ code: number; reason: string; wasClean: boolean }>) => void,
+  ): void;
   addEventListener(type: "error", listener: () => void): void;
   send(data: string): void;
   close(code?: number, reason?: string): void;
@@ -42,6 +45,12 @@ function closeSocket(socket: NetworkWebSocket, code?: number, reason?: string): 
 
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function socketCloseError(event: Readonly<{ code: number; reason: string; wasClean: boolean }>): Error {
+  const reason = event.reason.length === 0 ? "no reason provided" : event.reason;
+  const cleanliness = event.wasClean ? "clean" : "unclean";
+  return new Error(`WebSocket closed (${event.code}, ${cleanliness}): ${reason}`);
 }
 
 /** Owns one multiplexed socket and all remote battle sessions on it. */
@@ -133,9 +142,10 @@ export class NetworkClient {
           client?.terminate("error", failure);
         } finally { closeSocket(socket); }
       });
-      socket.addEventListener("close", () => {
-        if (!settled) reject(new Error("WebSocket closed before connecting"));
-        client?.terminate("socket", new Error("WebSocket closed"));
+      socket.addEventListener("close", (event) => {
+        const failure = socketCloseError(event);
+        if (!settled) reject(new Error(`WebSocket closed before connecting: ${failure.message}`));
+        client?.terminate("socket", failure);
       });
       if (socket.readyState === 1) identifyAsPlayer();
     });

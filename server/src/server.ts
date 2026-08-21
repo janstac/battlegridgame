@@ -28,6 +28,7 @@ export type GridGameServerOptions = Readonly<{
   adminMessageHandler?: AdminMessageHandler;
   playerSessionResumeGraceMs?: number;
   playerSessionClock?: PlayerSessionClock;
+  reportWebSocketError?: (error: unknown) => void;
 }>;
 
 export type GridGameServer = Readonly<{
@@ -74,6 +75,7 @@ export function createGridGameServer(options: GridGameServerOptions = {}): GridG
     {
       ...(options.playerSessionResumeGraceMs === undefined ? {} : { resumeGraceMs: options.playerSessionResumeGraceMs }),
       ...(options.playerSessionClock === undefined ? {} : { sessionClock: options.playerSessionClock }),
+      ...(options.reportWebSocketError === undefined ? {} : { reportError: options.reportWebSocketError }),
     },
   );
   return {

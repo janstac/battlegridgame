@@ -19,7 +19,9 @@ class FakeSocket implements NetworkWebSocket {
 
   addEventListener(
     type: "open" | "message" | "close" | "error",
-    listener: ((event: MessageEvent<unknown>) => void) | (() => void),
+    listener: ((event: MessageEvent<unknown>) => void)
+      | ((event: Readonly<{ code: number; reason: string; wasClean: boolean }>) => void)
+      | (() => void),
   ): void {
     if (type === "open") this.openListeners.push(listener as () => void);
     if (type === "message") {

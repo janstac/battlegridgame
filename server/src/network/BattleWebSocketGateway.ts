@@ -31,6 +31,7 @@ export interface PlayerSessionClock {
 export type BattleWebSocketGatewayOptions = Readonly<{
   resumeGraceMs?: number;
   sessionClock?: PlayerSessionClock;
+  reportError?: (error: unknown) => void;
 }>;
 
 export const DEFAULT_PLAYER_SESSION_RESUME_GRACE_MS = 30_000;
@@ -52,6 +53,7 @@ export class BattleWebSocketGateway {
   private readonly handleAdminMessage: AdminMessageHandler;
   private readonly resumeGraceMs: number;
   private readonly sessionClock: PlayerSessionClock;
+  private readonly reportError: (error: unknown) => void;
   private readonly webSockets = new Set<WebSocket>();
   private readonly sessions = new Map<WebSocket, SocketSession>();
   private readonly expiryTimers = new Map<ClientConnection, unknown>();
@@ -71,6 +73,7 @@ export class BattleWebSocketGateway {
     this.handleAdminMessage = handleAdminMessage;
     this.resumeGraceMs = options.resumeGraceMs ?? DEFAULT_PLAYER_SESSION_RESUME_GRACE_MS;
     this.sessionClock = options.sessionClock ?? SYSTEM_CLOCK;
+    this.reportError = options.reportError ?? ((error) => console.error(error));
     httpServer.on("upgrade", (request, socket, head) => {
       if (!this.isEndpoint(request)) { socket.destroy(); return; }
       this.server.handleUpgrade(request, socket, head, (webSocket) => {
@@ -132,7 +135,7 @@ export class BattleWebSocketGateway {
           const previous = connection.attachTransport(transport) as SocketTransport | null;
           this.sessions.set(socket, { role: "player", connection, transport });
           previous?.close();
-          void connection.resume().catch(() => socket.close(1011, "server error"));
+          void connection.resume().catch((error: unknown) => this.failSocket(socket, error));
           return;
         }
         const connection = this.players.register((playerId, resumeToken) => (
@@ -140,12 +143,12 @@ export class BattleWebSocketGateway {
         ));
         connection.attachTransport(transport);
         this.sessions.set(socket, { role: "player", connection, transport });
-        void connection.open().catch(() => socket.close(1011, "server error"));
+        void connection.open().catch((error: unknown) => this.failSocket(socket, error));
         return;
       }
       case "player": {
         const message = parseNetworkClientMessage(value);
-        void session.connection.receive(message).catch(() => socket.close(1011, "server error"));
+        void session.connection.receive(message).catch((error: unknown) => this.failSocket(socket, error));
         return;
       }
       case "admin": {
@@ -153,7 +156,7 @@ export class BattleWebSocketGateway {
         const output: AdminMessageOutput = (outbound) => this.sendAdminMessage(socket, outbound);
         const next = session.operations.then(() => this.handleAdminMessage(message, output));
         session.operations = next.catch(() => undefined);
-        void next.catch(() => socket.close(1011, "server error"));
+        void next.catch((error: unknown) => this.failSocket(socket, error));
         return;
       }
     }
@@ -165,6 +168,11 @@ export class BattleWebSocketGateway {
       protocolViolation: () => socket.close(1008, "protocol violation"),
       close: () => socket.close(4001, "session resumed elsewhere"),
     };
+  }
+
+  private failSocket(socket: WebSocket, error: unknown): void {
+    this.reportError(error);
+    socket.close(1011, "server error");
   }
 
   private scheduleExpiry(connection: ClientConnection): void {

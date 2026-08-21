@@ -173,7 +173,9 @@ test("authenticated admin messages use the typed async handler", async (t) => {
 });
 
 test("gateway rejects malformed admin handler output before serialization", async (t) => {
+  const reported: unknown[] = [];
   const app = await startServer(t, {
+    reportWebSocketError: (error) => reported.push(error),
     adminMessageHandler: (message, output) => {
       // Variables with extra fields are structurally assignable in TypeScript;
       // the gateway's runtime TypeBox parser must reject this before writing it.
@@ -202,6 +204,7 @@ test("gateway rejects malformed admin handler output before serialization", asyn
   assert.equal(result.code, 1011);
   assert.equal(result.reason, "server error");
   assert.equal(receivedFrame, false);
+  assert.equal(reported.length, 1);
 });
 
 type RejectionCase = Readonly<{

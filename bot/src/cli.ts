@@ -36,7 +36,7 @@ export function parseBotUrl(args: readonly string[]): string {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return error instanceof Error ? error.stack ?? error.message : String(error);
 }
 
 function exitCode(result: BotRuntimeResult): number {
@@ -77,11 +77,11 @@ export async function runBotCli(
       runtime.done,
     ]);
     if (bootstrap !== null) {
-      if (bootstrap.error !== null) writeError(bootstrap.error.message);
+      if (bootstrap.error !== null) writeError(errorMessage(bootstrap.error));
       return exitCode(bootstrap);
     }
     const result = await runtime.done;
-    if (result.error !== null) writeError(result.error.message);
+    if (result.error !== null) writeError(errorMessage(result.error));
     return exitCode(result);
   } catch (error) {
     writeError(errorMessage(error));
