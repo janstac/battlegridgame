@@ -103,41 +103,50 @@ export function getWorldDisclosureView(state: WorldDisclosureState): WorldDisclo
   };
 }
 
+export function WorldDisclosureToggle({
+  state,
+  panelId,
+  toggleClassName,
+  toggleRef,
+  onToggle,
+}: Readonly<{
+  state: WorldDisclosureState;
+  panelId: string;
+  toggleClassName: string;
+  toggleRef: Ref<HTMLButtonElement>;
+  onToggle(): void;
+}>) {
+  const view = getWorldDisclosureView(state);
+  if (!view.showToggle) return null;
+  return createElement("button", {
+    ref: toggleRef,
+    className: toggleClassName,
+    type: "button",
+    "aria-expanded": view.open,
+    "aria-controls": panelId,
+    onClick: onToggle,
+  }, view.toggleLabel);
+}
+
 export function WorldDisclosureRegion({
   state,
   panelId,
   panelClassName,
-  toggleClassName,
   statusClassName,
   panelRef,
-  toggleRef,
-  onToggle,
   children,
 }: Readonly<{
   state: WorldDisclosureState;
   panelId: string;
   panelClassName: string;
-  toggleClassName: string;
   statusClassName: string;
   panelRef: Ref<HTMLElement>;
-  toggleRef: Ref<HTMLButtonElement>;
-  onToggle(): void;
   children: ReactNode;
 }>) {
   const view = getWorldDisclosureView(state);
   return createElement(
     Fragment,
     null,
-    view.showToggle
-      ? createElement("button", {
-        ref: toggleRef,
-        className: toggleClassName,
-        type: "button",
-        "aria-expanded": view.open,
-        "aria-controls": panelId,
-        onClick: onToggle,
-      }, view.toggleLabel)
-      : null,
     createElement(
       "p",
       { className: statusClassName, "aria-live": "polite", "aria-atomic": true },

@@ -50,6 +50,7 @@ import {
   reduceWorldDisclosure,
   subscribeToCompactWorldMode,
   WorldDisclosureRegion,
+  WorldDisclosureToggle,
   type WorldDisclosureState,
 } from "./worldDisclosure.ts";
 
@@ -167,9 +168,7 @@ function NetworkViewer({
   now,
   onMove,
   disclosure,
-  onToggleWorld,
   worldPanelRef,
-  worldToggleRef,
 }: Readonly<{
   world: NetworkClient["world"];
   localPlayerId: PlayerId;
@@ -178,9 +177,7 @@ function NetworkViewer({
   now: number;
   onMove(battleId: BattleId, direction: -1 | 1): void;
   disclosure: WorldDisclosureState;
-  onToggleWorld(): void;
   worldPanelRef: RefObject<HTMLElement | null>;
-  worldToggleRef: RefObject<HTMLButtonElement | null>;
 }>) {
   const state = useWorldState(world.state);
   const [selected, setSelected] = useState<Position | null>(null);
@@ -204,11 +201,8 @@ function NetworkViewer({
         state={disclosure}
         panelId={WORLD_PANEL_ID}
         panelClassName={styles.worldPanel}
-        toggleClassName={styles.worldToggle}
         statusClassName={styles.worldStatus}
         panelRef={worldPanelRef}
-        toggleRef={worldToggleRef}
-        onToggle={onToggleWorld}
       >
         {state.resyncing && <StatusNotice kind="progress">Resynchronizing the World…</StatusNotice>}
         {error !== null && <StatusNotice kind="error">{error}</StatusNotice>}
@@ -372,7 +366,19 @@ export function NetworkGame() {
 
   const ready = connection.kind === "ready" ? connection.client : null;
   return (
-    <GamePage header={false} fullWidth>
+    <GamePage
+      header={false}
+      fullWidth
+      leadingAction={(
+        <WorldDisclosureToggle
+          state={worldDisclosure}
+          panelId={WORLD_PANEL_ID}
+          toggleClassName={styles.worldToggle}
+          toggleRef={worldToggleRef}
+          onToggle={() => dispatchWorldDisclosure({ type: "toggle" })}
+        />
+      )}
+    >
       {connection.kind === "connecting" && <StatusNotice kind="progress">Connecting to the game server…</StatusNotice>}
       {connection.kind === "error" && (
         <div>
@@ -388,9 +394,7 @@ export function NetworkGame() {
           order={battleOrder}
           now={now}
           disclosure={worldDisclosure}
-          onToggleWorld={() => dispatchWorldDisclosure({ type: "toggle" })}
           worldPanelRef={worldPanelRef}
-          worldToggleRef={worldToggleRef}
           onMove={(battleId, direction) => setBattleOrder((current) => moveBattle(current, battleId, direction))}
         />
       )}

@@ -11,6 +11,7 @@ import {
   reduceWorldDisclosure,
   subscribeToCompactWorldMode,
   WorldDisclosureRegion,
+  WorldDisclosureToggle,
   type MatchMedia,
   type WorldDisclosureState,
 } from "../src/app/worldDisclosure.ts";
@@ -125,20 +126,28 @@ test("compact media detection falls back to desktop without matchMedia", () => {
 });
 
 function renderRegion(state: WorldDisclosureState): string {
-  return renderToStaticMarkup(createElement(WorldDisclosureRegion, {
-    state,
-    panelId: "world-panel-test",
-    panelClassName: "panel",
-    toggleClassName: "toggle",
-    statusClassName: "status",
-    panelRef: null,
-    toggleRef: null,
-    onToggle: () => undefined,
-    children: createElement("span", null, "Persistent world"),
-  }));
+  return renderToStaticMarkup(createElement(
+    "div",
+    null,
+    createElement(WorldDisclosureToggle, {
+      state,
+      panelId: "world-panel-test",
+      toggleClassName: "toggle",
+      toggleRef: null,
+      onToggle: () => undefined,
+    }),
+    createElement(WorldDisclosureRegion, {
+      state,
+      panelId: "world-panel-test",
+      panelClassName: "panel",
+      statusClassName: "status",
+      panelRef: null,
+      children: createElement("span", null, "Persistent world"),
+    }),
+  ));
 }
 
-test("compact disclosure markup connects the toggle to a mounted hidden world", () => {
+test("compact toolbar toggle connects to a separately mounted hidden world", () => {
   const markup = renderRegion(sync(createWorldDisclosureState("compact"), "compact", 1));
   assert.match(markup, /<button[^>]*aria-expanded="false"[^>]*aria-controls="world-panel-test"[^>]*>Show world<\/button>/);
   assert.match(markup, /<p[^>]*aria-live="polite"[^>]*aria-atomic="true"[^>]*><span>World hidden because you joined a battle\.<\/span><\/p>/);

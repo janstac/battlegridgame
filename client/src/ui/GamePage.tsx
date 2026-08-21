@@ -5,6 +5,7 @@ import styles from "./GamePage.module.css";
 
 type GamePageSharedProps = {
   children: ReactNode;
+  leadingAction?: ReactNode;
   wide?: boolean;
   fullWidth?: boolean;
 };
@@ -36,8 +37,13 @@ export function GamePage(props: GamePageProps) {
     .join(" ");
   return (
     <main className={pageClassName}>
-      <div className={styles.themeControl}>
-        <ThemeControl />
+      <div className={styles.toolbar}>
+        {props.leadingAction !== undefined && (
+          <div className={styles.leadingAction}>{props.leadingAction}</div>
+        )}
+        <div className={styles.themeControl}>
+          <ThemeControl />
+        </div>
       </div>
       {props.header !== false && (
         <header className={styles.header}>

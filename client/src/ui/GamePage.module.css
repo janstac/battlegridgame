@@ -14,11 +14,16 @@
   padding-block: 1rem 0;
 }
 
-.themeControl {
+.toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: .75rem;
   margin-bottom: 1rem;
 }
+
+.leadingAction { min-width: 0; }
+
+.themeControl { margin-left: auto; }
 
 .header {
   max-width: 46rem;

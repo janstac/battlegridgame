@@ -12,6 +12,10 @@ const appStyles = readFileSync(
   new URL("../src/app/NetworkGame.module.css", import.meta.url),
   "utf8",
 );
+const pageStyles = readFileSync(
+  new URL("../src/ui/GamePage.module.css", import.meta.url),
+  "utf8",
+);
 const workspaceStyles = readFileSync(
   new URL("../src/battle/BattleWorkspace.module.css", import.meta.url),
   "utf8",
@@ -25,7 +29,7 @@ const battleGridStyles = readFileSync(
   "utf8",
 );
 
-test("world layout reserves a sticky desktop column and elevates compact disclosure", () => {
+test("world layout reserves a sticky desktop column and uses a shared compact toolbar", () => {
   const surfaceRule = appStyles.match(/\.surface\s*\{([^}]*)\}/)?.[1] ?? "";
   const worldRule = appStyles.match(/\.worldPanel\s*\{([^}]*)\}/)?.[1] ?? "";
   assert.match(surfaceRule, /display:\s*grid/);
@@ -33,10 +37,15 @@ test("world layout reserves a sticky desktop column and elevates compact disclos
   assert.match(worldRule, /position:\s*sticky/);
   assert.match(appStyles, /@media \(orientation: portrait\), \(max-width: 56rem\)/);
   assert.match(appStyles, /flex-direction:\s*column/);
+  const toolbarRule = pageStyles.match(/\.toolbar\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(toolbarRule, /display:\s*flex/);
+  assert.match(toolbarRule, /align-items:\s*center/);
+  assert.match(pageStyles, /\.themeControl\s*\{\s*margin-left:\s*auto/);
   const compactBlock = appStyles.split("@media (orientation: portrait), (max-width: 56rem)")[1] ?? "";
   const compactToggleRule = compactBlock.match(/\.worldToggle\s*\{([^}]*)\}/)?.[1] ?? "";
-  assert.match(compactToggleRule, /position:\s*sticky/);
-  assert.match(compactToggleRule, /top:\s*\.25rem/);
+  assert.match(compactToggleRule, /display:\s*block/);
+  assert.doesNotMatch(compactToggleRule, /position:\s*sticky/);
+  assert.doesNotMatch(compactToggleRule, /margin-bottom/);
 });
 
 test("battle workspace fills the desktop track with rows of two", () => {
