@@ -151,7 +151,7 @@ test("rejects a non-player first server message", async () => {
     webSocketFactory: () => socket,
   });
   socket.emitOpen();
-  socket.emit({ type: "worldSnapshot", snapshot: worldSnapshot() });
+  socket.emit({ type: "worldSnapshot", challengeable: true, snapshot: worldSnapshot() });
   await assert.rejects(pending, /First server message must be connected/);
   assert.equal(socket.closeCount, 1);
   assert.deepEqual(socket.closedWith, {
@@ -195,7 +195,7 @@ test("publishes an unexpected socket close and rejects pending requests", async 
   const { client, socket } = await connectFake();
   const events: NetworkClientEvent[] = [];
   client.subscribe((event) => events.push(event));
-  socket.emit({ type: "worldSnapshot", snapshot: worldSnapshot() });
+  socket.emit({ type: "worldSnapshot", challengeable: true, snapshot: worldSnapshot() });
   await client.world.ready;
   const challenge = client.world.challengeCell({ x: 1, y: 0 });
   const challengeRejected = assert.rejects(challenge, /WebSocket closed/);
@@ -288,11 +288,12 @@ test("intentional close publishes its reason and terminates joined sessions", as
 
 test("owns a World projection before consumers subscribe and applies deltas", async () => {
   const { client, socket } = await connectFake();
-  socket.emit({ type: "worldSnapshot", snapshot: worldSnapshot(2) });
+  socket.emit({ type: "worldSnapshot", challengeable: true, snapshot: worldSnapshot(2) });
 
   assert.equal((await client.world.ready).getSnapshot().snapshot?.revision, 2);
   socket.emit({
     type: "worldDelta",
+    challengeable: false,
     fromRevision: 2,
     revision: 3,
     changes: [{
@@ -303,6 +304,7 @@ test("owns a World projection before consumers subscribe and applies deltas", as
 
   const snapshot = client.world.state.getSnapshot().snapshot;
   assert.equal(snapshot?.revision, 3);
+  assert.equal(client.world.state.getSnapshot().challengeable, false);
   assert.deepEqual(snapshot?.grid.cells[1], {
     kind: "occupied",
     playerId: "player-2",
@@ -312,16 +314,16 @@ test("owns a World projection before consumers subscribe and applies deltas", as
 
 test("requests exactly one snapshot per World revision gap", async () => {
   const { client, socket } = await connectFake();
-  socket.emit({ type: "worldSnapshot", snapshot: worldSnapshot(4) });
-  socket.emit({ type: "worldDelta", fromRevision: 2, revision: 3, changes: [] });
-  socket.emit({ type: "worldDelta", fromRevision: 3, revision: 4, changes: [] });
+  socket.emit({ type: "worldSnapshot", challengeable: true, snapshot: worldSnapshot(4) });
+  socket.emit({ type: "worldDelta", challengeable: true, fromRevision: 2, revision: 3, changes: [] });
+  socket.emit({ type: "worldDelta", challengeable: true, fromRevision: 3, revision: 4, changes: [] });
   assert.equal(
     socket.sent.filter(({ type }) => type === "requestWorldSnapshot").length,
     1,
   );
 
-  socket.emit({ type: "worldSnapshot", snapshot: worldSnapshot(8) });
-  socket.emit({ type: "worldDelta", fromRevision: 7, revision: 8, changes: [] });
+  socket.emit({ type: "worldSnapshot", challengeable: false, snapshot: worldSnapshot(8) });
+  socket.emit({ type: "worldDelta", challengeable: false, fromRevision: 7, revision: 8, changes: [] });
   assert.equal(
     socket.sent.filter(({ type }) => type === "requestWorldSnapshot").length,
     2,

@@ -260,6 +260,51 @@ test("debug battle creation preflights whole-roster capacity without side effect
   assert.equal(second.messages.length, messageCounts[1]);
 });
 
+test("World updates publish per-player challenge capacity and refresh it on release", async (t) => {
+  const app = await harness(true, 1);
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const challenger = await app.connect();
+  const defender = await app.connect();
+  const observer = await app.connect();
+
+  await challenger.connection.receive({
+    type: "challengeWorldCell",
+    requestId: "challenge",
+    position: { x: 2, y: 0 },
+  });
+  const pending = app.world.cellAt({ x: 2, y: 0 });
+  assert.equal(pending.kind, "challengePending");
+  if (pending.kind !== "challengePending") return;
+
+  const challengerUpdate = challenger.messages.filter(
+    (message) => message.type === "worldSnapshot" || message.type === "worldDelta",
+  ).at(-1);
+  const defenderUpdate = defender.messages.filter(
+    (message) => message.type === "worldSnapshot" || message.type === "worldDelta",
+  ).at(-1);
+  const observerUpdate = observer.messages.filter(
+    (message) => message.type === "worldSnapshot" || message.type === "worldDelta",
+  ).at(-1);
+  assert.equal(challengerUpdate?.challengeable, false);
+  assert.equal(defenderUpdate?.challengeable, false);
+  assert.equal(observerUpdate?.challengeable, true);
+
+  await challenger.connection.receive({
+    type: "leaveWorldChallenge",
+    requestId: "cancel",
+    challengeId: pending.challengeId,
+  });
+  const releasedUpdate = challenger.messages.filter(
+    (message) => message.type === "worldSnapshot" || message.type === "worldDelta",
+  ).at(-1);
+  assert.equal(releasedUpdate?.type, "worldSnapshot");
+  assert.equal(releasedUpdate?.challengeable, true);
+  assert.equal(
+    releasedUpdate?.type === "worldSnapshot" ? releasedUpdate.snapshot.revision : -1,
+    app.world.revision,
+  );
+});
+
 test("countdown reservations reject capped creators and joiners", async (t) => {
   const app = await harness(true, 1);
   t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });

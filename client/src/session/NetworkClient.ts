@@ -232,14 +232,14 @@ export class NetworkClient {
         this.sessions.get(message.battleId)?.receive(message.message);
         return;
       case "worldSnapshot":
-        this.world.receiveSnapshot(message.snapshot);
+        this.world.receiveSnapshot(message.snapshot, message.challengeable);
         return;
       case "worldDelta":
         this.world.receiveDelta({
           fromRevision: message.fromRevision,
           revision: message.revision,
           changes: message.changes,
-        });
+        }, message.challengeable);
         return;
       case "worldCommandAccepted":
         this.world.receiveCommandResult(message.requestId, null);

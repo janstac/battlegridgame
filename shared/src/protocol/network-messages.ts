@@ -98,11 +98,13 @@ export const BattleLeftMessageSchema = Type.Object({
 
 export const WorldSnapshotMessageSchema = Type.Object({
   type: Type.Literal("worldSnapshot"),
+  challengeable: Type.Boolean(),
   snapshot: WorldSnapshotSchema,
 }, { additionalProperties: false });
 
 export const WorldDeltaMessageSchema = Type.Object({
   type: Type.Literal("worldDelta"),
+  challengeable: Type.Boolean(),
   fromRevision: WorldDeltaSchema.properties.fromRevision,
   revision: WorldDeltaSchema.properties.revision,
   changes: WorldDeltaSchema.properties.changes,

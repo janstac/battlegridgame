@@ -110,6 +110,22 @@ function waitForSessionMessage(
   }), description);
 }
 
+function waitForChallengeability(
+  client: NetworkClient,
+  challengeable: boolean,
+): Promise<void> {
+  if (client.world.state.getSnapshot().challengeable === challengeable) {
+    return Promise.resolve();
+  }
+  return withTimeout(new Promise<void>((resolve) => {
+    const unsubscribe = client.world.state.subscribe(() => {
+      if (client.world.state.getSnapshot().challengeable !== challengeable) return;
+      unsubscribe();
+      resolve();
+    });
+  }), `challengeable=${challengeable}`);
+}
+
 async function startServer(t: TestContext, maxConcurrentBattlesPerPlayer?: number) {
   const clock = new ManualHostedBattleClock();
   const challengeClock = new ManualChallengeClock();
@@ -277,6 +293,32 @@ test("gateway rejects malformed client messages with a policy close", async (t) 
   }), "the gateway policy close");
   socket.send(JSON.stringify({ type: "not-a-client-message" }));
   assert.deepEqual(await closed, { code: 1008, reason: "invalid message" });
+});
+
+test("real clients disable challenges at capacity and re-enable them after release", async (t) => {
+  const app = await startServer(t, 1);
+  const first = await app.connect();
+  const second = await app.connect();
+  await Promise.all([first.world.ready, second.world.ready]);
+  assert.equal(first.world.state.getSnapshot().challengeable, true);
+
+  const firstJoined = waitForClientEvent(
+    first,
+    (event) => event.type === "battleJoined",
+    "capacity-limited battle membership",
+  );
+  const firstConnection = app.server.players.get(first.playerId);
+  assert.ok(firstConnection);
+  assert.equal(await app.server.coordinator.createDebugBattle(firstConnection, [
+    first.playerId,
+    second.playerId,
+  ]), null);
+  const joined = await firstJoined;
+  assert.equal(joined.type, "battleJoined");
+  await waitForChallengeability(first, false);
+
+  await joined.session.close();
+  await waitForChallengeability(first, true);
 });
 
 test("real clients observe the World while only challenge participants receive its battle", async (t) => {

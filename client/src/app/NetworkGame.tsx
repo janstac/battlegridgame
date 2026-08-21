@@ -43,6 +43,7 @@ import {
   worldPlayerColor,
 } from "../world/index.ts";
 import styles from "./NetworkGame.module.css";
+import { challengeActionDisabled } from "./challengeAvailability.ts";
 import {
   createWorldDisclosureState,
   getCompactWorldMode,
@@ -100,6 +101,7 @@ function WorldDetail({
   cell,
   localPlayerId,
   busy,
+  challengeable,
   onChallenge,
   onJoin,
   onLeave,
@@ -107,6 +109,7 @@ function WorldDetail({
   cell: WorldCell;
   localPlayerId: PlayerId;
   busy: boolean;
+  challengeable: boolean;
   onChallenge(): void;
   onJoin(challengeId: ChallengeId): void;
   onLeave(challengeId: ChallengeId): void;
@@ -121,7 +124,7 @@ function WorldDetail({
         )}
       </div>
       {cell.kind === "occupied" && cell.playerId !== localPlayerId && (
-        <ActionButton className={styles.challengeAction} type="button" disabled={busy} onClick={onChallenge}>Challenge</ActionButton>
+        <ActionButton className={styles.challengeAction} type="button" disabled={challengeActionDisabled(busy, challengeable)} onClick={onChallenge}>Challenge</ActionButton>
       )}
       {challenge !== null && (
         <div className={styles.challengeDetail}>
@@ -229,6 +232,7 @@ function NetworkViewer({
                   cell={selectedCell}
                   localPlayerId={localPlayerId}
                   busy={busy}
+                  challengeable={state.challengeable}
                   onChallenge={() => run(() => world.challengeCell(selected))}
                   onJoin={(challengeId) => run(() => world.joinChallenge(challengeId))}
                   onLeave={(challengeId) => run(() => world.leaveChallenge(challengeId))}

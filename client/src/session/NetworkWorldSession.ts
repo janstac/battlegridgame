@@ -89,10 +89,10 @@ export class NetworkWorldSession {
   }
 
   /** @internal Receives a complete public World projection. */
-  receiveSnapshot(snapshot: WorldSnapshot): void {
+  receiveSnapshot(snapshot: WorldSnapshot, challengeable: boolean): void {
     if (this.closed) return;
     this.resyncRequested = false;
-    this.state.replaceSnapshot(snapshot);
+    this.state.replaceSnapshot(snapshot, challengeable);
     if (!this.readyResolved) {
       this.readyResolved = true;
       this.resolveReady(this.state);
@@ -100,9 +100,9 @@ export class NetworkWorldSession {
   }
 
   /** @internal Receives a revision-linked World mutation. */
-  receiveDelta(delta: WorldDelta): void {
+  receiveDelta(delta: WorldDelta, challengeable: boolean): void {
     if (this.closed || this.resyncRequested) return;
-    if (!this.state.applyDelta(delta)) {
+    if (!this.state.applyDelta(delta, challengeable)) {
       this.resyncRequested = true;
       this.client.sendNetworkMessage({ type: "requestWorldSnapshot" });
     }

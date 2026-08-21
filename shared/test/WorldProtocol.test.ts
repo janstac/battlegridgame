@@ -258,9 +258,10 @@ test("network protocol parses World commands and rejects unknown payload fields"
 test("network protocol parses snapshots, deltas, command results, and joined rosters", () => {
   const snapshot = makeWorldSnapshot();
   const messages = [
-    { type: "worldSnapshot", snapshot },
+    { type: "worldSnapshot", challengeable: true, snapshot },
     {
       type: "worldDelta",
+      challengeable: false,
       fromRevision: 3,
       revision: 4,
       changes: [{
@@ -296,6 +297,17 @@ test("network protocol parses snapshots, deltas, command results, and joined ros
   for (const message of messages) {
     assert.deepEqual(parseNetworkServerMessage(message), message);
   }
+  assert.throws(() => parseNetworkServerMessage({
+    type: "worldSnapshot",
+    snapshot,
+  }));
+  assert.throws(() => parseNetworkServerMessage({
+    type: "worldDelta",
+    challengeable: "yes",
+    fromRevision: 3,
+    revision: 4,
+    changes: [],
+  }));
 
   assert.deepEqual(parseNetworkServerMessage({
     ...messages.at(-1),

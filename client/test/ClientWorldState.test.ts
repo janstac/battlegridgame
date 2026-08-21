@@ -22,7 +22,7 @@ test("projects snapshots and contiguous deltas immutably", () => {
   let publications = 0;
   world.subscribe(() => { publications += 1; });
   const initial = snapshot(2);
-  world.replaceSnapshot(initial);
+  world.replaceSnapshot(initial, true);
   initial.grid.cells[0] = { kind: "occupied", playerId: "mutated" };
 
   assert.deepEqual(world.getSnapshot().snapshot?.grid.cells[0], {
@@ -35,24 +35,36 @@ test("projects snapshots and contiguous deltas immutably", () => {
       position: { x: 0, y: 0 },
       cell: { kind: "occupied", playerId: "new-owner" },
     }],
-  }), true);
+  }, false), true);
   assert.equal(world.getSnapshot().snapshot?.revision, 3);
+  assert.equal(world.getSnapshot().challengeable, false);
   assert.equal(world.getSnapshot().ready, true);
   assert.equal(publications, 2);
 });
 
 test("enters resync once on a gap and ignores deltas until replacement", () => {
   const world = new ClientWorldState();
-  world.replaceSnapshot(snapshot(5));
-  assert.equal(world.applyDelta({ fromRevision: 3, revision: 4, changes: [] }), false);
+  world.replaceSnapshot(snapshot(5), false);
+  assert.equal(world.applyDelta({ fromRevision: 3, revision: 4, changes: [] }, true), false);
   assert.equal(world.getSnapshot().resyncing, true);
-  assert.equal(world.applyDelta({ fromRevision: 5, revision: 6, changes: [] }), false);
+  assert.equal(world.applyDelta({ fromRevision: 5, revision: 6, changes: [] }, true), false);
   assert.equal(world.getSnapshot().snapshot?.revision, 5);
 
-  world.replaceSnapshot(snapshot(10));
+  world.replaceSnapshot(snapshot(10), true);
   assert.equal(world.getSnapshot().resyncing, false);
-  assert.equal(world.applyDelta({ fromRevision: 10, revision: 11, changes: [] }), true);
+  assert.equal(world.applyDelta({ fromRevision: 10, revision: 11, changes: [] }, false), true);
   assert.equal(world.getSnapshot().snapshot?.revision, 11);
+});
+
+test("same-revision snapshots refresh server-authoritative challenge capacity", () => {
+  const world = new ClientWorldState();
+  world.replaceSnapshot(snapshot(3), false);
+  assert.equal(world.getSnapshot().challengeable, false);
+
+  world.replaceSnapshot(snapshot(3), true);
+  assert.equal(world.getSnapshot().snapshot?.revision, 3);
+  assert.equal(world.getSnapshot().challengeable, true);
+  assert.equal(world.getSnapshot().resyncing, false);
 });
 
 test("projects a waiting challenge into its authoritative countdown replacement", () => {
@@ -70,7 +82,7 @@ test("projects a waiting challenge into its authoritative countdown replacement"
         participantIds: ["defender", "challenger"],
       }],
     },
-  });
+  }, true);
 
   assert.equal(world.applyDelta({
     fromRevision: 6,
@@ -85,7 +97,7 @@ test("projects a waiting challenge into its authoritative countdown replacement"
         closesAt: 25_000,
       },
     }],
-  }), true);
+  }, true), true);
 
   assert.deepEqual(world.getSnapshot().snapshot?.grid.cells[0], {
     kind: "challengePending",

@@ -7,6 +7,7 @@ import {
 /** Stable immutable projection consumed by React via useSyncExternalStore. */
 export type ClientWorldViewState = Readonly<{
   snapshot: WorldSnapshot | null;
+  challengeable: boolean;
   ready: boolean;
   resyncing: boolean;
 }>;
@@ -19,8 +20,10 @@ function copySnapshot(snapshot: WorldSnapshot): WorldSnapshot {
 export class ClientWorldState {
   private snapshot: WorldSnapshot | null = null;
   private awaitingSnapshot = false;
+  private challengeable = false;
   private viewState: ClientWorldViewState = {
     snapshot: null,
+    challengeable: false,
     ready: false,
     resyncing: false,
   };
@@ -34,8 +37,9 @@ export class ClientWorldState {
   };
 
   /** Replaces all projected state and completes any outstanding resync. */
-  replaceSnapshot(snapshot: WorldSnapshot): void {
+  replaceSnapshot(snapshot: WorldSnapshot, challengeable: boolean): void {
     this.snapshot = copySnapshot(snapshot);
+    this.challengeable = challengeable;
     this.awaitingSnapshot = false;
     this.publish();
   }
@@ -44,7 +48,7 @@ export class ClientWorldState {
    * Applies a contiguous delta. Returns false when a fresh snapshot is needed.
    * Further deltas are ignored until that snapshot arrives.
    */
-  applyDelta(delta: WorldDelta): boolean {
+  applyDelta(delta: WorldDelta, challengeable: boolean): boolean {
     if (this.awaitingSnapshot) return false;
     if (this.snapshot === null) {
       this.awaitingSnapshot = true;
@@ -58,6 +62,7 @@ export class ClientWorldState {
       return false;
     }
     this.snapshot = result.snapshot;
+    this.challengeable = challengeable;
     this.publish();
     return true;
   }
@@ -65,6 +70,7 @@ export class ClientWorldState {
   private publish(): void {
     this.viewState = {
       snapshot: this.snapshot === null ? null : copySnapshot(this.snapshot),
+      challengeable: this.challengeable,
       ready: this.snapshot !== null,
       resyncing: this.awaitingSnapshot,
     };

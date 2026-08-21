@@ -167,6 +167,7 @@ export class WorldCoordinator {
       for (const participant of participants as ClientConnection[]) {
         participant.attachBattle(battleId, battle);
       }
+      this.refreshChallengeability(playerIds);
       battle.start();
       return { ok: true, battle: this.adminBattle(battleId, battle) };
     });
@@ -314,15 +315,24 @@ export class WorldCoordinator {
     await this.enqueue(() => {
       if (connection.isClosed) return;
       this.world.allocateUnoccupiedCells(connection.playerId);
-      connection.sendWorldSnapshot(this.world.snapshot());
+      connection.sendWorldSnapshot(
+        this.world.snapshot(),
+        this.capacity.hasCapacity(connection.playerId),
+      );
       connection.setWorldSubscription(this.world.subscribe((delta) => {
-        connection.sendWorldDelta(delta);
+        connection.sendWorldDelta(
+          delta,
+          this.capacity.hasCapacity(connection.playerId),
+        );
       }));
     });
   }
 
   async requestWorldSnapshot(connection: ClientConnection): Promise<void> {
-    await this.enqueue(() => connection.sendWorldSnapshot(this.world.snapshot()));
+    await this.enqueue(() => connection.sendWorldSnapshot(
+      this.world.snapshot(),
+      this.capacity.hasCapacity(connection.playerId),
+    ));
   }
 
   async challengeWorldCell(
@@ -444,7 +454,9 @@ export class WorldCoordinator {
       } else {
         this.replaceOpenChallengeCell(runtime.challenge);
         if (wasCountdown && result.removedPlayerId !== undefined) {
-          this.capacity.releasePlayer(challengeId, result.removedPlayerId);
+          if (this.capacity.releasePlayer(challengeId, result.removedPlayerId)) {
+            this.refreshChallengeability([result.removedPlayerId]);
+          }
         }
       }
       this.drainWaitingChallenges();
@@ -482,6 +494,7 @@ export class WorldCoordinator {
       for (const participant of participants as ClientConnection[]) {
         participant.attachBattle(battleId, battle);
       }
+      this.refreshChallengeability(playerIds);
       battle.start();
       return null;
     });
@@ -518,10 +531,11 @@ export class WorldCoordinator {
         } else {
           this.replaceOpenChallengeCell(runtime.challenge);
           if (wasCountdown && result.removedPlayerId !== undefined) {
-            this.capacity.releasePlayer(
+            const released = this.capacity.releasePlayer(
               runtime.challenge.challengeId,
               result.removedPlayerId,
             );
+            if (released) this.refreshChallengeability([result.removedPlayerId]);
           }
         }
       }
@@ -642,7 +656,8 @@ export class WorldCoordinator {
     this.challenges.delete(challengeId);
     this.closedChallenges.add(challengeId);
     this.waitingChallenges.remove(challengeId);
-    this.capacity.releaseChallenge(challengeId);
+    const releasedPlayerIds = this.capacity.releaseChallenge(challengeId);
+    this.refreshChallengeability(releasedPlayerIds);
     runtime.challenge.dispose();
   }
 
@@ -728,7 +743,12 @@ export class WorldCoordinator {
       ).catch(() => undefined);
     });
     const unsubscribeCapacityRelease = battle.onCapacityReleased(() => {
-      void this.enqueue(() => this.drainWaitingChallenges()).catch(() => undefined);
+      void this.enqueue(() => {
+        this.refreshChallengeability(
+          battle.getRoster().map(({ playerId }) => playerId),
+        );
+        this.drainWaitingChallenges();
+      }).catch(() => undefined);
     });
     this.battleUnsubscribers.set(battleId, () => {
       unsubscribeTerminal();
@@ -778,6 +798,17 @@ export class WorldCoordinator {
     const next = this.operations.then(operation);
     this.operations = next.then(() => undefined, () => undefined);
     return await next;
+  }
+
+  private refreshChallengeability(playerIds: readonly PlayerId[]): void {
+    const snapshot = this.world.snapshot();
+    for (const playerId of new Set(playerIds)) {
+      const connection = this.players.get(playerId);
+      connection?.refreshChallengeability(
+        snapshot,
+        this.capacity.hasCapacity(playerId),
+      );
+    }
   }
 }
 

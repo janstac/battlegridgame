@@ -30,6 +30,7 @@ export class ClientConnection {
   private closing: Promise<void> | undefined;
   private opened = false;
   private closed = false;
+  private lastChallengeable: boolean | undefined;
 
   constructor(
     playerId: PlayerId,
@@ -156,12 +157,22 @@ export class ClientConnection {
     });
   }
 
-  sendWorldSnapshot(snapshot: WorldSnapshot): void {
-    if (!this.closed) this.output({ type: "worldSnapshot", snapshot });
+  sendWorldSnapshot(snapshot: WorldSnapshot, challengeable: boolean): void {
+    if (this.closed) return;
+    this.lastChallengeable = challengeable;
+    this.output({ type: "worldSnapshot", challengeable, snapshot });
   }
 
-  sendWorldDelta(delta: WorldDelta): void {
-    if (!this.closed) this.output({ type: "worldDelta", ...delta });
+  sendWorldDelta(delta: WorldDelta, challengeable: boolean): void {
+    if (this.closed) return;
+    this.lastChallengeable = challengeable;
+    this.output({ type: "worldDelta", challengeable, ...delta });
+  }
+
+  /** Sends a same-revision snapshot only when this player's capacity flag changed. */
+  refreshChallengeability(snapshot: WorldSnapshot, challengeable: boolean): void {
+    if (this.closed || this.lastChallengeable === challengeable) return;
+    this.sendWorldSnapshot(snapshot, challengeable);
   }
 
   setWorldSubscription(unsubscribe: () => void): void {
