@@ -10,29 +10,5 @@
   flex: 0 0 auto;
   width: 100%;
   min-width: 0;
-  border-radius: var(--radius-panel);
-  background: var(--color-surface-deep);
 }
-.tileActions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: .25rem;
-  padding: .35rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-large) var(--radius-large) 0 0;
-  background: var(--color-surface-muted);
-}
-.tileActions button {
-  min-width: 2rem;
-  min-height: 2rem;
-  border: 1px solid var(--color-border-interactive);
-  border-radius: var(--radius-small);
-  color: var(--color-text-primary);
-  background: var(--color-surface-interactive);
-  cursor: pointer;
-}
-.tileActions button:focus-visible { outline: var(--focus-outline); outline-offset: 1px; }
-.tileActions button:disabled { opacity: .35; cursor: default; }
-.tileActions .leave { padding-inline: .6rem; color: var(--color-error-text); border-color: var(--color-error-border); }
 .empty { padding: 2rem; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-panel); color: var(--color-text-muted); text-align: center; }

@@ -30,15 +30,18 @@ export function BattleTile({
 }>) {
   return (
     <article ref={articleRef} className={styles.tile} aria-label={`Battle ${model.battleId}`}>
-      <div className={styles.tileActions}>
-        <button type="button" disabled={index === 0} onClick={() => onMove(-1)} aria-label={`Move battle ${model.battleId} earlier`}>↑</button>
-        <button type="button" disabled={index === count - 1} onClick={() => onMove(1)} aria-label={`Move battle ${model.battleId} later`}>↓</button>
-        <button type="button" className={styles.leave} onClick={onLeave}>Leave</button>
-      </div>
       <BattleView
         battle={model.battle}
         participantColorIds={model.participantColorIds}
         participantLabels={model.participantLabels}
+        controls={{
+          battleLabel: `battle ${model.battleId}`,
+          showMoveButtons: count > 2,
+          canMoveEarlier: index > 0,
+          canMoveLater: index < count - 1,
+          onMove,
+          onLeave,
+        }}
       />
     </article>
   );

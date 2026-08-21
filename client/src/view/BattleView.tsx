@@ -1,5 +1,5 @@
 import type { BattleParticipantId } from "@grid-game/shared";
-import type { CSSProperties } from "react";
+import { useId, useState, type CSSProperties } from "react";
 
 import type { ClientBattleState } from "../model/index.ts";
 import {
@@ -15,6 +15,14 @@ export type BattleViewProps = Readonly<{
   battle: ClientBattleState;
   participantColorIds: ReadonlyMap<BattleParticipantId, PlayerColorId>;
   participantLabels?: ReadonlyMap<BattleParticipantId, string>;
+  controls?: Readonly<{
+    battleLabel: string;
+    showMoveButtons: boolean;
+    canMoveEarlier: boolean;
+    canMoveLater: boolean;
+    onMove(direction: -1 | 1): void;
+    onLeave(): void;
+  }>;
 }>;
 
 /** Renders directly from the client-owned authoritative state projection. */
@@ -22,7 +30,10 @@ export function BattleView({
   battle,
   participantColorIds,
   participantLabels,
+  controls,
 }: BattleViewProps) {
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
+  const confirmationTitleId = useId();
   const state = useClientBattleState(battle);
   const snapshot = state.battle;
   const localCooldown = snapshot.cooldowns.find(
@@ -45,6 +56,39 @@ export function BattleView({
 
   return (
     <section className={styles.panel}>
+      {controls !== undefined && (
+        <div className={styles.controls}>
+          {controls.showMoveButtons && (
+            <>
+              <button
+                type="button"
+                disabled={!controls.canMoveEarlier}
+                onClick={() => controls.onMove(-1)}
+                aria-label={`Move ${controls.battleLabel} earlier`}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                disabled={!controls.canMoveLater}
+                onClick={() => controls.onMove(1)}
+                aria-label={`Move ${controls.battleLabel} later`}
+              >
+                ↓
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            className={styles.leave}
+            onClick={() => setConfirmingLeave(true)}
+            aria-label={`Leave ${controls.battleLabel}`}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       <div className={styles.playerLegend}>
         {snapshot.participants.map(({ participantId, status }) => {
           const playerColorId = participantColorIds.get(participantId);
@@ -111,6 +155,22 @@ export function BattleView({
           void battle.increment(position);
         }}
       />
+      {controls !== undefined && confirmingLeave && (
+        <div className={styles.confirmationLayer}>
+          <div
+            className={styles.confirmationDialog}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={confirmationTitleId}
+          >
+            <p id={confirmationTitleId}>Leave this battle?</p>
+            <div className={styles.confirmationActions}>
+              <button type="button" onClick={controls.onLeave}>Yes</button>
+              <button type="button" onClick={() => setConfirmingLeave(false)} autoFocus>No</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

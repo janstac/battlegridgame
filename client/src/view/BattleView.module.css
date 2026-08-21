@@ -1,10 +1,84 @@
 .panel {
+  position: relative;
+  isolation: isolate;
   min-width: 0;
+  overflow: hidden;
   padding: clamp(0.55rem, 1.4vw, 0.8rem);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-panel);
   background: var(--color-surface-panel);
   box-shadow: var(--shadow-panel);
+}
+
+.controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.controls button,
+.confirmationActions button {
+  min-width: 2rem;
+  min-height: 2rem;
+  border: 1px solid var(--color-border-interactive);
+  border-radius: var(--radius-small);
+  color: var(--color-text-primary);
+  background: var(--color-surface-interactive);
+  cursor: pointer;
+}
+
+.controls button:focus-visible,
+.confirmationActions button:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 1px;
+}
+
+.controls button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.controls .leave {
+  color: var(--color-error-text);
+  border-color: var(--color-error-border);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.confirmationLayer {
+  position: absolute;
+  z-index: 10;
+  inset: 0;
+  display: grid;
+  padding: 1rem;
+  place-items: center;
+  background: rgb(0 0 0 / 65%);
+}
+
+.confirmationDialog {
+  width: min(18rem, 100%);
+  padding: 1rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-large);
+  color: var(--color-text-primary);
+  text-align: center;
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-panel);
+}
+
+.confirmationDialog p {
+  margin: 0 0 1rem;
+  font-weight: 700;
+}
+
+.confirmationActions {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.confirmationActions button {
+  min-width: 4rem;
 }
 
 .playerLegend {
