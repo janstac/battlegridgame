@@ -14,6 +14,8 @@
   "scripts": {
     "typecheck": "tsc",
     "test": "node --test shared/test/*.test.ts client/test/*.test.ts server/test/*.test.ts bot/test/*.test.ts",
+    "test:integration": "node --test server/test/integration/*.test.ts",
+    "test:all": "npm test && npm run test:integration",
     "test:bot": "npm test --workspace @grid-game/bot",
     "build:bot": "npm run build --workspace @grid-game/bot",
     "start:bot": "npm run start --workspace @grid-game/bot --",

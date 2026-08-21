@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import test, { type TestContext } from "node:test";
-import type { NetworkClientEvent } from "../../client/src/session/NetworkClient.ts";
+import type { NetworkClientEvent } from "../../../client/src/session/NetworkClient.ts";
 import {
   NetworkClient,
   type NetworkWebSocket,
-} from "../../client/src/session/NetworkClient.ts";
-import type { NetworkBattleSession } from "../../client/src/session/NetworkBattleSession.ts";
-import { WorldCommandRejectedError } from "../../client/src/session/NetworkWorldSession.ts";
+} from "../../../client/src/session/NetworkClient.ts";
+import type { NetworkBattleSession } from "../../../client/src/session/NetworkBattleSession.ts";
+import { WorldCommandRejectedError } from "../../../client/src/session/NetworkWorldSession.ts";
 import type { ServerMessage } from "@grid-game/shared";
 import { WebSocket } from "ws";
-import { createGridGameServer } from "../src/server.ts";
+import { createGridGameServer } from "../../src/server.ts";
 
 const ASYNC_TIMEOUT_MS = 2_000;
 
