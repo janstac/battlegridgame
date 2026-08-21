@@ -18,6 +18,7 @@ import {
   addWorldPointerTerminationListener,
   addWorldWheelListener,
   isWorldPointerContactActive,
+  WorldPointerContacts,
   worldWheelTransform,
 } from "./worldViewportInput.ts";
 
@@ -40,7 +41,7 @@ export type WorldViewportProps = Readonly<{ children: ReactNode }>;
 
 export function WorldViewport({ children }: WorldViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const pointersRef = useRef(new Map<number, ViewportPoint>());
+  const pointersRef = useRef(new WorldPointerContacts());
   const gestureRef = useRef<{ centroid: ViewportPoint; distance: number | null } | null>(null);
   const gestureStartRef = useRef<ViewportPoint | null>(null);
   const draggingRef = useRef(false);
@@ -86,16 +87,14 @@ export function WorldViewport({ children }: WorldViewportProps) {
   };
 
   const refreshGesture = () => {
-    const points = [...pointersRef.current.values()];
+    const points = pointersRef.current.values();
     if (points.length === 0) gestureRef.current = null;
     else if (points.length === 1) gestureRef.current = { centroid: points[0]!, distance: null };
     else gestureRef.current = { centroid: centroid(points[0]!, points[1]!), distance: distance(points[0]!, points[1]!) };
   };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    if (pointersRef.current.size >= 2) return;
-    pointersRef.current.set(event.pointerId, pointerPoint(event));
+    if (!pointersRef.current.begin(event, pointerPoint(event), event.currentTarget)) return;
     if (pointersRef.current.size === 1) {
       movedRef.current = false;
       draggingRef.current = false;
@@ -105,7 +104,7 @@ export function WorldViewport({ children }: WorldViewportProps) {
   };
 
   const finishPointer = (pointerId: number) => {
-    pointersRef.current.delete(pointerId);
+    if (!pointersRef.current.finish(pointerId, hostRef.current ?? undefined)) return;
     refreshGesture();
     gestureStartRef.current = gestureRef.current?.centroid ?? null;
     if (pointersRef.current.size === 0) draggingRef.current = false;
@@ -119,9 +118,9 @@ export function WorldViewport({ children }: WorldViewportProps) {
       finishPointer(event.pointerId);
       return;
     }
-    pointersRef.current.set(event.pointerId, pointerPoint(event));
+    pointersRef.current.update(event, pointerPoint(event));
     const prior = gestureRef.current;
-    const points = [...pointersRef.current.values()];
+    const points = pointersRef.current.values();
     if (prior === null || points.length === 0) return refreshGesture();
     const nextCentroid = points.length === 1 ? points[0]! : centroid(points[0]!, points[1]!);
     const startedDragging = points.length > 1 || (
@@ -131,9 +130,7 @@ export function WorldViewport({ children }: WorldViewportProps) {
     if (!draggingRef.current && startedDragging) {
       draggingRef.current = true;
       movedRef.current = true;
-      for (const pointerId of pointersRef.current.keys()) {
-        event.currentTarget.setPointerCapture(pointerId);
-      }
+      pointersRef.current.captureAll(event.currentTarget);
     }
     if (!draggingRef.current) {
       gestureRef.current = { centroid: nextCentroid, distance: null };

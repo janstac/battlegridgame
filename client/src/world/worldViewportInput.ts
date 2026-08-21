@@ -20,9 +20,72 @@ export type WorldPointerContact = Readonly<{
   pointerType: string;
 }>;
 
+export type WorldPointerStart = WorldPointerContact & Readonly<{
+  button: number;
+  pointerId: number;
+}>;
+
+export type WorldPointerMove = WorldPointerContact & Readonly<{
+  pointerId: number;
+}>;
+
+export type WorldPointerCaptureTarget = Pick<
+  Element,
+  "hasPointerCapture" | "releasePointerCapture" | "setPointerCapture"
+>;
+
 /** Rejects a stale mouse move after its primary-button contact ended off-viewer. */
 export function isWorldPointerContactActive(contact: WorldPointerContact): boolean {
   return contact.pointerType !== "mouse" || (contact.buttons & 1) !== 0;
+}
+
+/** Owns the accepted contacts and their pointer capture for one World gesture. */
+export class WorldPointerContacts {
+  readonly #points = new Map<number, ViewportPoint>();
+
+  get size(): number {
+    return this.#points.size;
+  }
+
+  begin(
+    contact: WorldPointerStart,
+    point: ViewportPoint,
+    target: WorldPointerCaptureTarget,
+  ): boolean {
+    if (contact.pointerType === "mouse" && contact.button !== 0) return false;
+    if (!this.#points.has(contact.pointerId) && this.#points.size >= 2) return false;
+    this.#points.set(contact.pointerId, point);
+    if (contact.pointerType !== "mouse") this.capture(contact.pointerId, target);
+    return true;
+  }
+
+  has(pointerId: number): boolean {
+    return this.#points.has(pointerId);
+  }
+
+  update(contact: WorldPointerMove, point: ViewportPoint): boolean {
+    if (!this.#points.has(contact.pointerId) || !isWorldPointerContactActive(contact)) return false;
+    this.#points.set(contact.pointerId, point);
+    return true;
+  }
+
+  values(): ViewportPoint[] {
+    return [...this.#points.values()];
+  }
+
+  captureAll(target: WorldPointerCaptureTarget): void {
+    for (const pointerId of this.#points.keys()) this.capture(pointerId, target);
+  }
+
+  finish(pointerId: number, target?: WorldPointerCaptureTarget): boolean {
+    const finished = this.#points.delete(pointerId);
+    if (finished && target?.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
+    return finished;
+  }
+
+  private capture(pointerId: number, target: WorldPointerCaptureTarget): void {
+    if (!target.hasPointerCapture(pointerId)) target.setPointerCapture(pointerId);
+  }
 }
 
 /** Finishes tracked contacts even when an uncaptured pointer is released off-viewer. */

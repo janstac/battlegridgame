@@ -7,6 +7,7 @@ import {
   addWorldWheelListener,
   isWorldPointerContactActive,
   normalizeWorldWheelDelta,
+  WorldPointerContacts,
   worldWheelTransform,
   worldWheelZoomFactor,
 } from "../src/world/worldViewportInput.ts";
@@ -17,6 +18,81 @@ test("world pointer tracking discards a mouse released outside the viewer", () =
   assert.equal(isWorldPointerContactActive({ pointerType: "mouse", buttons: 2 }), false);
   assert.equal(isWorldPointerContactActive({ pointerType: "touch", buttons: 0 }), true);
   assert.equal(isWorldPointerContactActive({ pointerType: "pen", buttons: 0 }), true);
+});
+
+class RecordingPointerCaptureTarget {
+  readonly captures: number[] = [];
+  readonly releases: number[] = [];
+  readonly captured = new Set<number>();
+
+  hasPointerCapture(pointerId: number): boolean {
+    return this.captured.has(pointerId);
+  }
+
+  setPointerCapture(pointerId: number): void {
+    this.captures.push(pointerId);
+    this.captured.add(pointerId);
+  }
+
+  releasePointerCapture(pointerId: number): void {
+    this.releases.push(pointerId);
+    this.captured.delete(pointerId);
+  }
+}
+
+test("touch tracking captures on contact and remains active across repeated moves until release", () => {
+  const contacts = new WorldPointerContacts();
+  const target = new RecordingPointerCaptureTarget();
+  const touch = { pointerId: 7, pointerType: "touch", button: 0, buttons: 0 };
+
+  assert.equal(contacts.begin(touch, { x: 10, y: 12 }, target), true);
+  assert.deepEqual(target.captures, [7]);
+  assert.equal(contacts.update(touch, { x: 12, y: 13 }), true);
+  assert.equal(contacts.update(touch, { x: 18, y: 16 }), true);
+  assert.equal(contacts.update(touch, { x: 46, y: 29 }), true);
+  assert.deepEqual(contacts.values(), [{ x: 46, y: 29 }]);
+
+  assert.equal(contacts.finish(7, target), true);
+  assert.deepEqual(target.releases, [7]);
+  assert.equal(contacts.size, 0);
+  assert.equal(contacts.update(touch, { x: 80, y: 80 }), false);
+});
+
+test("pen and pinch contacts capture immediately while mouse capture remains drag-driven", () => {
+  const contacts = new WorldPointerContacts();
+  const target = new RecordingPointerCaptureTarget();
+
+  assert.equal(contacts.begin(
+    { pointerId: 1, pointerType: "pen", button: 0, buttons: 1 },
+    { x: 5, y: 5 },
+    target,
+  ), true);
+  assert.equal(contacts.begin(
+    { pointerId: 2, pointerType: "touch", button: 0, buttons: 0 },
+    { x: 25, y: 5 },
+    target,
+  ), true);
+  assert.deepEqual(target.captures, [1, 2]);
+  assert.equal(contacts.begin(
+    { pointerId: 3, pointerType: "touch", button: 0, buttons: 0 },
+    { x: 40, y: 5 },
+    target,
+  ), false);
+
+  contacts.finish(1, target);
+  contacts.finish(2, target);
+  assert.equal(contacts.begin(
+    { pointerId: 4, pointerType: "mouse", button: 0, buttons: 1 },
+    { x: 10, y: 10 },
+    target,
+  ), true);
+  assert.deepEqual(target.captures, [1, 2]);
+  contacts.captureAll(target);
+  assert.deepEqual(target.captures, [1, 2, 4]);
+  assert.equal(contacts.update(
+    { pointerId: 4, pointerType: "mouse", buttons: 0 },
+    { x: 11, y: 10 },
+  ), false);
 });
 
 class RecordingWheelTarget {
