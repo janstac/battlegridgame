@@ -9,8 +9,8 @@ import {
 import { BattleRegistry } from "../src/game/BattleRegistry.ts";
 import { createGridGameServer } from "../src/server.ts";
 
-test("defaults to four and validates positive safe integer overrides", () => {
-  assert.equal(DEFAULT_MAX_CONCURRENT_BATTLES_PER_PLAYER, 4);
+test("defaults to two and validates positive safe integer overrides", () => {
+  assert.equal(DEFAULT_MAX_CONCURRENT_BATTLES_PER_PLAYER, 2);
   assert.equal(validateMaxConcurrentBattlesPerPlayer(1), 1);
   assert.equal(validateMaxConcurrentBattlesPerPlayer(9), 9);
   for (const invalid of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
@@ -57,7 +57,7 @@ test("rejects duplicate rosters without changing reservation state", () => {
 
 test("server composition resolves the default and rejects invalid overrides", async () => {
   const defaultServer = createGridGameServer();
-  assert.equal(defaultServer.coordinator.maxConcurrentBattlesPerPlayer, 4);
+  assert.equal(defaultServer.coordinator.maxConcurrentBattlesPerPlayer, 2);
   await defaultServer.close();
 
   const overridden = createGridGameServer({ maxConcurrentBattlesPerPlayer: 7 });

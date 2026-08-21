@@ -122,18 +122,20 @@ test("admin inspection returns deterministic independent server snapshots", asyn
   ]);
 });
 
-test("admin battle start validates rosters and preserves simultaneous memberships", async (t) => {
+test("admin battle start validates rosters and preserves two simultaneous memberships", async (t) => {
   const app = await harness();
   t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
   const first = await app.connect();
   const second = await app.connect();
+  const third = await app.connect();
+  await app.connect();
 
-  await first.connection.receive({
+  await third.connection.receive({
     type: "challengeWorldCell",
     requestId: "challenge",
-    position: { x: 2, y: 0 },
+    position: { x: 6, y: 0 },
   });
-  const pending = app.world.cellAt({ x: 2, y: 0 });
+  const pending = app.world.cellAt({ x: 6, y: 0 });
   assert.equal(pending.kind, "challengePending");
 
   assert.deepEqual(await app.admin.dispatch({
@@ -166,7 +168,16 @@ test("admin battle start validates rosters and preserves simultaneous membership
   assert.equal(app.battles.membershipsForPlayer(first.connection.playerId).length, 2);
   assert.equal(first.messages.filter(({ type }) => type === "battleJoined").length, 2);
   assert.equal(second.messages.filter(({ type }) => type === "battleJoined").length, 2);
-  assert.deepEqual(app.world.cellAt({ x: 2, y: 0 }), pending);
+  assert.deepEqual(await app.admin.dispatch({
+    type: "adminStartBattle", requestId: "capped", playerIds: roster,
+  }), {
+    type: "adminError",
+    requestId: "capped",
+    code: "battleLimitReached",
+    message: "One or more battle participants have reached the concurrent battle limit",
+  });
+  assert.equal(app.battles.entries().length, 2);
+  assert.deepEqual(app.world.cellAt({ x: 6, y: 0 }), pending);
 });
 
 test("admin battle start rejects players disconnected before serialized execution", async (t) => {
