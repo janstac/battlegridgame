@@ -1,5 +1,11 @@
 import type { BattleParticipantId } from "@grid-game/shared";
-import { useId, useState, type CSSProperties } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 
 import type { ClientBattleState } from "../model/index.ts";
 import {
@@ -8,6 +14,7 @@ import {
 } from "./BattleCellView.tsx";
 import { BattleGridView } from "./BattleGridView.tsx";
 import styles from "./BattleView.module.css";
+import { handleConfirmationKeyDown } from "./confirmationFocus.ts";
 import { cooldownProgress } from "./cooldownProgress.ts";
 import { useClientBattleState } from "./useClientBattleState.ts";
 
@@ -34,6 +41,11 @@ export function BattleView({
 }: BattleViewProps) {
   const [confirmingLeave, setConfirmingLeave] = useState(false);
   const confirmationTitleId = useId();
+  const confirmationDescriptionId = useId();
+  const leaveButtonRef = useRef<HTMLButtonElement>(null);
+  const confirmationDialogRef = useRef<HTMLDivElement>(null);
+  const cancelConfirmationRef = useRef<HTMLButtonElement>(null);
+  const closingConfirmationRef = useRef(false);
   const state = useClientBattleState(battle);
   const snapshot = state.battle;
   const localCooldown = snapshot.cooldowns.find(
@@ -53,6 +65,32 @@ export function BattleView({
   const winner = snapshot.status.kind === "finished"
     ? snapshot.status.winnerId
     : null;
+
+  const closeConfirmation = () => {
+    closingConfirmationRef.current = true;
+    setConfirmingLeave(false);
+    leaveButtonRef.current?.focus();
+  };
+
+  useLayoutEffect(() => {
+    if (!confirmingLeave) {
+      closingConfirmationRef.current = false;
+      return;
+    }
+
+    cancelConfirmationRef.current?.focus();
+    const keepFocusInDialog = (event: FocusEvent) => {
+      const dialog = confirmationDialogRef.current;
+      if (
+        closingConfirmationRef.current
+        || dialog === null
+        || dialog.contains(event.target as Node | null)
+      ) return;
+      cancelConfirmationRef.current?.focus();
+    };
+    document.addEventListener("focusin", keepFocusInDialog);
+    return () => document.removeEventListener("focusin", keepFocusInDialog);
+  }, [confirmingLeave]);
 
   return (
     <section className={styles.panel}>
@@ -79,9 +117,13 @@ export function BattleView({
             </>
           )}
           <button
+            ref={leaveButtonRef}
             type="button"
             className={styles.leave}
-            onClick={() => setConfirmingLeave(true)}
+            onClick={() => {
+              closingConfirmationRef.current = false;
+              setConfirmingLeave(true);
+            }}
             aria-label={`Leave ${controls.battleLabel}`}
           >
             ×
@@ -158,15 +200,36 @@ export function BattleView({
       {controls !== undefined && confirmingLeave && (
         <div className={styles.confirmationLayer}>
           <div
+            ref={confirmationDialogRef}
             className={styles.confirmationDialog}
             role="dialog"
-            aria-modal="true"
             aria-labelledby={confirmationTitleId}
+            aria-describedby={confirmationDescriptionId}
+            tabIndex={-1}
+            onKeyDown={(event) => handleConfirmationKeyDown(
+              event.nativeEvent,
+              event.currentTarget,
+              document.activeElement,
+              closeConfirmation,
+            )}
           >
             <p id={confirmationTitleId}>Leave this battle?</p>
+            <p id={confirmationDescriptionId} className={styles.confirmationDescription}>
+              Your place in this battle will be released.
+            </p>
             <div className={styles.confirmationActions}>
-              <button type="button" onClick={controls.onLeave}>Yes</button>
-              <button type="button" onClick={() => setConfirmingLeave(false)} autoFocus>No</button>
+              <button
+                type="button"
+                onClick={() => {
+                  closeConfirmation();
+                  controls.onLeave();
+                }}
+              >
+                Yes
+              </button>
+              <button ref={cancelConfirmationRef} type="button" onClick={closeConfirmation}>
+                No
+              </button>
             </div>
           </div>
         </div>

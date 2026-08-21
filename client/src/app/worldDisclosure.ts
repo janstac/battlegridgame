@@ -1,6 +1,6 @@
 import { createElement, Fragment, type ReactNode, type Ref } from "react";
 
-export const COMPACT_WORLD_QUERY = "(orientation: portrait), (max-width: 48rem)";
+export const COMPACT_WORLD_QUERY = "(orientation: portrait), (max-width: 56rem)";
 export const WORLD_HIDDEN_ANNOUNCEMENT = "World hidden because you joined a battle.";
 
 export type WorldLayoutMode = "compact" | "desktop";

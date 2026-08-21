@@ -29,13 +29,15 @@ test("battle controls are rendered by the inner panel and moves appear above two
 });
 
 test("leaving requires an in-panel accessible confirmation", () => {
-  assert.match(viewSource, /onClick=\{\(\) => setConfirmingLeave\(true\)\}/);
+  assert.match(viewSource, /setConfirmingLeave\(true\)/);
   assert.match(viewSource, /controls !== undefined && confirmingLeave/);
   assert.match(viewSource, /role="dialog"/);
-  assert.match(viewSource, /aria-modal="true"/);
+  assert.doesNotMatch(viewSource, /aria-modal/);
   assert.match(viewSource, /aria-labelledby=\{confirmationTitleId\}/);
-  assert.match(viewSource, /<button type="button" onClick=\{controls\.onLeave\}>Yes<\/button>/);
-  assert.match(viewSource, /setConfirmingLeave\(false\).*autoFocus>No<\/button>/);
+  assert.match(viewSource, /aria-describedby=\{confirmationDescriptionId\}/);
+  assert.match(viewSource, /handleConfirmationKeyDown/);
+  assert.match(viewSource, /document\.addEventListener\("focusin", keepFocusInDialog\)/);
+  assert.match(viewSource, /leaveButtonRef\.current\?\.focus\(\)/);
 });
 
 test("confirmation overlay is centered and scoped to the battle panel", () => {

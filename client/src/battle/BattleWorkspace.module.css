@@ -20,9 +20,10 @@
 }
 .empty { padding: 2rem; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-panel); color: var(--color-text-muted); text-align: center; }
 
-@media (orientation: portrait), (max-width: 48rem) {
+@media (orientation: portrait), (max-width: 56rem) {
   .workspace {
-    --battle-tile-size: min(100%, 28rem, calc((100dvh - 16rem) / 2));
+    /* The height budget includes page controls, disclosure, gaps, and both panels' chrome. */
+    --battle-tile-size: min(100%, 28rem, calc((100dvh - 13.5rem) / 2));
     grid-template-columns: minmax(0, var(--battle-tile-size));
     justify-content: center;
     width: 100%;

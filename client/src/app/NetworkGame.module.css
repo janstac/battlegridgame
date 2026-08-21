@@ -51,7 +51,7 @@
 .roster { display: grid; gap: .35rem; }
 .roster span { display: flex; align-items: center; gap: .4rem; color: var(--color-text-primary); font-size: .82rem; }
 .roster i { width: .65rem; height: .65rem; border-radius: 50%; }
-@media (orientation: portrait), (max-width: 48rem) {
+@media (orientation: portrait), (max-width: 56rem) {
   .surface {
     --world-size: min(42rem, calc(100vw - 1.5rem), 46dvh);
     display: flex;
