@@ -106,16 +106,16 @@ async function waitFor(
 }
 
 test("sockets remain anonymous until they select exactly one role", async (t) => {
-  const app = await startServer(t);
+  const app = await startServer(t, { playerSessionResumeGraceMs: 0 });
   const player = await app.connect();
   assert.deepEqual(app.server.players.playerIds(), []);
   assert.equal(app.server.world.revision, 0);
 
   player.send({ type: "connectAsPlayer" });
-  assert.deepEqual(parseNetworkServerMessage(await player.next()), {
-    type: "connected",
-    playerId: "player-1",
-  });
+  const connected = parseNetworkServerMessage(await player.next());
+  assert.equal(connected.type, "connected");
+  assert.equal(connected.playerId, "player-1");
+  assert.ok(connected.resumeToken);
   const bootstrap = parseNetworkServerMessage(await player.next());
   assert.equal(bootstrap.type, "worldSnapshot");
   assert.deepEqual(app.server.players.playerIds(), ["player-1"]);
