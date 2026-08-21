@@ -3,3 +3,4 @@ export * from "./LocalBattleEngineConnection.ts";
 export * from "./NetworkBattleSession.ts";
 export * from "./NetworkClient.ts";
 export * from "./NetworkWorldSession.ts";
+export * from "./ResumeTokenStore.ts";
