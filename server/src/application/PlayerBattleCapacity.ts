@@ -1,7 +1,7 @@
 import type { ChallengeId, PlayerId } from "@grid-game/shared";
 import type { BattleRegistry } from "../game/BattleRegistry.ts";
 
-export const DEFAULT_MAX_CONCURRENT_BATTLES_PER_PLAYER = 4;
+export const DEFAULT_MAX_CONCURRENT_BATTLES_PER_PLAYER = 2;
 
 /** Validates and returns the configured per-player concurrent battle limit. */
 export function validateMaxConcurrentBattlesPerPlayer(value: number): number {
