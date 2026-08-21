@@ -16,6 +16,14 @@ const workspaceStyles = readFileSync(
   new URL("../src/battle/BattleWorkspace.module.css", import.meta.url),
   "utf8",
 );
+const battleViewStyles = readFileSync(
+  new URL("../src/view/BattleView.module.css", import.meta.url),
+  "utf8",
+);
+const battleGridStyles = readFileSync(
+  new URL("../src/view/BattleGridView.module.css", import.meta.url),
+  "utf8",
+);
 
 test("world layout reserves a sticky desktop column and elevates compact disclosure", () => {
   const surfaceRule = appStyles.match(/\.surface\s*\{([^}]*)\}/)?.[1] ?? "";
@@ -31,23 +39,43 @@ test("world layout reserves a sticky desktop column and elevates compact disclos
   assert.match(compactToggleRule, /top:\s*\.25rem/);
 });
 
-test("battle workspace flows bounded desktop tiles in rows of two", () => {
+test("battle workspace fills the desktop track with rows of two", () => {
+  const trackRule = appStyles.match(/\.battleTrack\s*\{([^}]*)\}/)?.[1] ?? "";
   const workspaceRule = workspaceStyles.match(/\.workspace\s*\{([^}]*)\}/)?.[1] ?? "";
   const tileRule = workspaceStyles.match(/\.tile\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(trackRule, /height:\s*100%/);
+  assert.match(trackRule, /overflow:\s*auto/);
   assert.match(workspaceRule, /display:\s*grid/);
-  assert.match(workspaceRule, /grid-template-columns:\s*repeat\(2,/);
-  assert.match(workspaceRule, /width:\s*max-content/);
-  assert.match(workspaceRule, /max-width:\s*100%/);
-  assert.match(tileRule, /width:\s*var\(--battle-tile-size\)/);
+  assert.match(workspaceRule, /grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(workspaceRule, /grid-auto-rows:\s*100%/);
+  assert.match(workspaceRule, /width:\s*100%/);
+  assert.match(workspaceRule, /height:\s*100%/);
+  assert.match(tileRule, /min-width:\s*0/);
+  assert.match(tileRule, /min-height:\s*0/);
 });
 
-test("compact battle workspace returns to one viewport-aware column", () => {
+test("compact battle workspace fits two full-width panels in the track", () => {
   assert.match(workspaceStyles, /@media \(orientation: portrait\), \(max-width: 56rem\)/);
   const compactBlock = workspaceStyles.split("@media (orientation: portrait), (max-width: 56rem)")[1] ?? "";
   const workspaceRule = compactBlock.match(/\.workspace\s*\{([^}]*)\}/)?.[1] ?? "";
-  assert.match(workspaceRule, /grid-template-columns:\s*minmax\(0, var\(--battle-tile-size\)\)/);
-  assert.match(workspaceRule, /--battle-tile-size:\s*min\(100%, 28rem, calc\(\(100dvh - 13\.5rem\) \/ 2\)\)/);
-  assert.match(workspaceRule, /width:\s*100%/);
+  assert.match(workspaceRule, /grid-template-columns:\s*minmax\(0, 1fr\)/);
+  assert.match(workspaceRule, /grid-auto-rows:\s*calc\(\(100% - \.75rem\) \/ 2\)/);
+  assert.doesNotMatch(workspaceStyles, /--battle-tile-size/);
+});
+
+test("battle panels give all remaining width and height to the square grid", () => {
+  const panelRule = battleViewStyles.match(/\.panel\s*\{([^}]*)\}/)?.[1] ?? "";
+  const gridAreaRule = battleViewStyles.match(/\.gridArea\s*\{([^}]*)\}/)?.[1] ?? "";
+  const gridRule = battleGridStyles.match(/\.grid\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(panelRule, /display:\s*flex/);
+  assert.match(panelRule, /height:\s*100%/);
+  assert.match(gridAreaRule, /flex:\s*1 1 0/);
+  assert.match(gridAreaRule, /min-height:\s*0/);
+  assert.match(gridAreaRule, /place-items:\s*center/);
+  assert.match(gridRule, /width:\s*100%/);
+  assert.match(gridRule, /height:\s*100%/);
+  assert.match(gridRule, /max-width:\s*100%/);
+  assert.match(gridRule, /max-height:\s*100%/);
 });
 
 function viewportMatchMedia(width: number, height: number): MatchMedia {
@@ -65,17 +93,12 @@ test("representative phone and desktop viewports select the intended layout mode
   assert.equal(getCompactWorldMode(viewportMatchMedia(1073, 632)), false);
 });
 
-test("compact height budget fits two square grids plus complete panel chrome", () => {
-  const rem = 16;
-  const reservedChrome = 13.5 * rem;
-  const viewports: readonly (readonly [number, number])[] = [
-    [844, 390],
-    [600, 800],
-    [768, 1024],
-  ];
-  for (const [width, height] of viewports) {
-    const gridSize = Math.min(width, 28 * rem, (height - reservedChrome) / 2);
-    assert.ok(gridSize > 0);
-    assert.ok(gridSize * 2 + reservedChrome <= height);
-  }
+test("compact surface gives its remaining viewport height to the battle track", () => {
+  const compactBlock = appStyles.split("@media (orientation: portrait), (max-width: 56rem)")[1] ?? "";
+  const surfaceRule = compactBlock.match(/\.surface\s*\{([^}]*)\}/)?.[1] ?? "";
+  const trackRule = compactBlock.match(/\.battleTrack\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(surfaceRule, /height:\s*calc\(100dvh - 5\.25rem\)/);
+  assert.match(trackRule, /flex:\s*1 1 0/);
+  assert.match(trackRule, /min-height:\s*0/);
+  assert.match(trackRule, /overflow:\s*auto/);
 });

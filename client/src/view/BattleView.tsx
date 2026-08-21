@@ -188,15 +188,17 @@ export function BattleView({
             : `${participantLabels?.get(winner) ?? `Player ${winner + 1}`} wins the battle.`}
         </p>
       )}
-      <BattleGridView
-        snapshot={snapshot}
-        localParticipantId={state.localParticipantId}
-        localInteractionDisabled={localInteractionDisabled}
-        participantColorIds={participantColorIds}
-        onCellActivate={(position) => {
-          void battle.increment(position);
-        }}
-      />
+      <div className={styles.gridArea}>
+        <BattleGridView
+          snapshot={snapshot}
+          localParticipantId={state.localParticipantId}
+          localInteractionDisabled={localInteractionDisabled}
+          participantColorIds={participantColorIds}
+          onCellActivate={(position) => {
+            void battle.increment(position);
+          }}
+        />
+      </div>
       {controls !== undefined && confirmingLeave && (
         <div className={styles.confirmationLayer}>
           <div

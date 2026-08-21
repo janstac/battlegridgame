@@ -1,32 +1,23 @@
 .workspace {
-  --battle-tile-size: min(
-    24rem,
-    calc((100vw - var(--world-size, 0px) - 4rem) / 2),
-    calc(100dvh - 11rem)
-  );
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, var(--battle-tile-size)));
-  align-items: start;
-  justify-content: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 100%;
   gap: .75rem;
-  width: max-content;
-  max-width: 100%;
-  padding: .15rem .15rem .65rem;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0 .15rem .15rem;
 }
 .tile {
-  width: var(--battle-tile-size);
-  max-width: 100%;
   min-width: 0;
+  min-height: 0;
 }
 .empty { padding: 2rem; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-panel); color: var(--color-text-muted); text-align: center; }
 
 @media (orientation: portrait), (max-width: 56rem) {
   .workspace {
-    /* The height budget includes page controls, disclosure, gaps, and both panels' chrome. */
-    --battle-tile-size: min(100%, 28rem, calc((100dvh - 13.5rem) / 2));
-    grid-template-columns: minmax(0, var(--battle-tile-size));
-    justify-content: center;
-    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: calc((100% - .75rem) / 2);
     padding-inline: 0;
   }
 }
