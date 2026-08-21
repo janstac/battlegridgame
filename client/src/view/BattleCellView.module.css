@@ -41,7 +41,7 @@
 
 .count {
   fill: var(--player-color);
-  font-family: "Noto Serif", ui-serif, Georgia, serif;
+  font-family: "Noto Sans", ui-sans-serif, system-ui, sans-serif;
   font-size: 0.43px;
   font-weight: 800;
   pointer-events: none;
@@ -54,7 +54,7 @@
   paint-order: stroke fill;
   stroke: var(--color-local-count-outline);
   stroke-linejoin: round;
-  stroke-width: 0.09px;
+  stroke-width: 0.05px;
 }
 
 .countChanged {

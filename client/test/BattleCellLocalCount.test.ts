@@ -30,13 +30,13 @@ test("local and non-local counts keep conditional label styling", () => {
   assert.equal(cellSource.match(/styles\.localCount/g)?.length, 1);
 });
 
-test("local count outline has the doubled purpose-specific stroke", () => {
+test("local count outline has the purpose-specific stroke", () => {
   const localCount = ruleBody(cellStyles, ".localCount");
 
   assert.match(localCount, /paint-order:\s*stroke fill;/);
   assert.match(localCount, /stroke:\s*var\(--color-local-count-outline\);/);
   assert.match(localCount, /stroke-linejoin:\s*round;/);
-  assert.match(localCount, /stroke-width:\s*0\.09px;/);
+  assert.match(localCount, /stroke-width:\s*0\.05px;/);
   assert.doesNotMatch(localCount, /--color-surface-raised/);
   assert.doesNotMatch(localCount, /0\.045px/);
 });

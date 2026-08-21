@@ -33,7 +33,7 @@
 
 .label {
   fill: var(--color-heading);
-  font-family: "Noto Serif", ui-serif, Georgia, serif;
+  font-family: "Noto Sans", ui-sans-serif, system-ui, sans-serif;
   font-size: 0.29px;
   font-weight: 800;
   text-anchor: middle;
