@@ -17,7 +17,7 @@ test("BattleState exposes safe copies and mechanical mutation methods", () => {
   assert.deepEqual(state.cellAt({ x: 0, y: 0 }), occupied(ALPHA, 1));
 
   state.replaceCell({ x: 0, y: 0 }, occupied(ALPHA, 5));
-  state.replaceCooldown({ participantId: ALPHA, nextActionTick: 4, durationTicks: 4 });
+  state.replaceCooldown({ participantId: ALPHA, nextActionTick: 4, durationTicks: 4, acceptedActionCount: 1 });
   state.addPendingSplit({
     position: { x: 0, y: 0 }, dueTick: 10, sequence: 0,
   });

@@ -73,10 +73,11 @@ test("engine events map to ordered server facts including victory cleanup", () =
     participantId: ALPHA,
     nextActionTick: 14,
     durationTicks: 4,
+    acceptedActionCount: 1,
   }, 10), [{
     type: "cooldownChanged",
     tick: 10,
-    cooldown: { participantId: ALPHA, nextActionTick: 14, durationTicks: 4 },
+    cooldown: { participantId: ALPHA, nextActionTick: 14, durationTicks: 4, acceptedActionCount: 1 },
   }]);
 });
 
@@ -97,7 +98,7 @@ test("server protocol validates individual authoritative facts", () => {
     {
       type: "cooldownChanged",
       tick: 2,
-      cooldown: { participantId: ALPHA, nextActionTick: 6, durationTicks: 4 },
+      cooldown: { participantId: ALPHA, nextActionTick: 6, durationTicks: 4, acceptedActionCount: 1 },
     },
     {
       type: "commandRejected",

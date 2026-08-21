@@ -1,7 +1,7 @@
 import {
   BattleEngine,
   DEFAULT_BATTLE_CONFIG,
-  FixedCooldownPolicy,
+  BurstCooldownPolicy,
   type BattleCell,
   type BattleParticipant,
   type PlayerId,
@@ -10,6 +10,9 @@ import {
 import { HostedBattle, type HostedBattleClock } from "./HostedBattle.ts";
 
 const STANDARD_BATTLE_GRID_SIZE = 7;
+const STANDARD_SHORT_COOLDOWN_SECONDS = 1;
+const STANDARD_LONG_COOLDOWN_SECONDS = 5;
+const STANDARD_INCREMENTS_PER_BURST = 3;
 export const STANDARD_BATTLE_MAX_PARTICIPANTS = 4;
 
 /** Creates the standard deterministic battle layout without network dependencies. */
@@ -58,7 +61,11 @@ export class StandardBattleFactory {
     const engine = BattleEngine.create(
       { participants, grid: { width, height, cells } },
       DEFAULT_BATTLE_CONFIG,
-      new FixedCooldownPolicy(10),
+      new BurstCooldownPolicy(
+        STANDARD_SHORT_COOLDOWN_SECONDS,
+        STANDARD_LONG_COOLDOWN_SECONDS,
+        STANDARD_INCREMENTS_PER_BURST,
+      ),
     );
     const roster = playerIds.map((playerId, participantId) => ({
       participantId,

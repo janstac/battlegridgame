@@ -8,6 +8,7 @@ test("cooldown progress is exact for a reconnect snapshot", () => {
     participantId: 0,
     nextActionTick: 18,
     durationTicks: 10,
+    acceptedActionCount: 1,
   }, 13), {
     remainingTicks: 5,
     ratio: 0.5,
@@ -23,6 +24,7 @@ test("ready and zero-duration cooldowns have no fill", () => {
     participantId: 0,
     nextActionTick: 20,
     durationTicks: 0,
+    acceptedActionCount: 1,
   }, 20), {
     remainingTicks: 0,
     ratio: 0,
@@ -34,6 +36,7 @@ test("cooldown progress never exposes an invalid CSS ratio", () => {
     participantId: 0,
     nextActionTick: 25,
     durationTicks: Number.NaN,
+    acceptedActionCount: 1,
   }, 20), {
     remainingTicks: 5,
     ratio: 0,
@@ -42,6 +45,7 @@ test("cooldown progress never exposes an invalid CSS ratio", () => {
     participantId: 0,
     nextActionTick: 25,
     durationTicks: 5,
+    acceptedActionCount: 1,
   }, Number.NaN), {
     remainingTicks: 0,
     ratio: 0,
@@ -50,6 +54,7 @@ test("cooldown progress never exposes an invalid CSS ratio", () => {
     participantId: 0,
     nextActionTick: Number.NaN,
     durationTicks: 5,
+    acceptedActionCount: 1,
   }, 20), {
     remainingTicks: 0,
     ratio: 0,

@@ -67,7 +67,7 @@ test("decides immediately, sends one command, and waits for authoritative resolu
   connection.emit({
     type: "cooldownChanged",
     tick: 0,
-    cooldown: { participantId: ALPHA, nextActionTick: 4, durationTicks: 4 },
+    cooldown: { participantId: ALPHA, nextActionTick: 4, durationTicks: 4, acceptedActionCount: 1 },
   });
   assert.equal(bot.states.length, 1);
   assert.equal(controller.view.hasLocalCommandPending, false);
@@ -76,7 +76,7 @@ test("decides immediately, sends one command, and waits for authoritative resolu
 
 test("keeps one replaceable cooldown wake and rereads authoritative state at expiry", async () => {
   const snapshot = createBattleSnapshot();
-  snapshot.cooldowns = [{ participantId: ALPHA, nextActionTick: 4, durationTicks: 4 }];
+  snapshot.cooldowns = [{ participantId: ALPHA, nextActionTick: 4, durationTicks: 4, acceptedActionCount: 1 }];
   const connection = new RecordingConnection(snapshot);
   const bot = new RecordingBot();
   const clock = new ManualBotClock();

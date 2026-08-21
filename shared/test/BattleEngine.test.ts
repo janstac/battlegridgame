@@ -4,6 +4,7 @@ import test from "node:test";
 import type { BattleEvent, CommandResult } from "../src/game/index.ts";
 import {
   BattleEngine,
+  BurstCooldownPolicy,
   FixedCooldownPolicy,
 } from "../src/game/index.ts";
 import {
@@ -82,6 +83,7 @@ test("increments owned cells and emits authoritative state changes", () => {
     participantId: ALPHA,
     nextActionTick: 4,
     durationTicks: 4,
+    acceptedActionCount: 1,
   });
   assert.deepEqual(cellAt(engine.getSnapshot().grid, { x: 0, y: 0 }), occupied(ALPHA, 2));
 });
@@ -183,6 +185,86 @@ test("cooldowns are isolated by participant and by battle", () => {
   assert.equal(increment(first, ALPHA, 1, 0).accepted, true);
 });
 
+test("burst cooldowns repeat short, short, long and keep participant counters independent", () => {
+  const engine = BattleEngine.create(
+    makeSetup(makeGrid(8, 3, [
+      ...Array.from({ length: 6 }, (_, index) =>
+        [{ x: index + 1, y: 1 }, occupied(ALPHA, 1)] as const),
+      [{ x: 7, y: 2 }, occupied(BETA, 1)],
+    ])),
+    CONFIG,
+    new BurstCooldownPolicy(1, 5, 3),
+  );
+
+  const durations: number[] = [];
+  for (let action = 1; action <= 6; action += 1) {
+    const cooldown = eventOfKind(increment(engine, ALPHA, action, 1).events, "cooldownStarted");
+    durations.push(cooldown.durationTicks);
+    assert.equal(cooldown.acceptedActionCount, action);
+
+    // An active-cooldown rejection leaves the authoritative count unchanged.
+    assert.deepEqual(engine.applyCommand(
+      { participantId: ALPHA },
+      { kind: "incrementCell", position: { x: action, y: 1 } },
+    ), { accepted: false, reason: "cooldownActive" });
+    assert.equal(engine.getSnapshot().cooldowns[0]?.acceptedActionCount, action);
+    advance(engine, cooldown.durationTicks);
+  }
+  assert.deepEqual(durations, [20, 20, 100, 20, 20, 100]);
+
+  const betaCooldown = eventOfKind(increment(engine, BETA, 7, 2).events, "cooldownStarted");
+  assert.equal(betaCooldown.durationTicks, 20);
+  assert.equal(betaCooldown.acceptedActionCount, 1);
+});
+
+test("burst cooldown conversion uses configured ticks per second", () => {
+  const engine = BattleEngine.create(
+    makeSetup(makeGrid(5, 3, [
+      [{ x: 1, y: 1 }, occupied(ALPHA, 1)],
+      [{ x: 2, y: 1 }, occupied(ALPHA, 1)],
+      [{ x: 3, y: 1 }, occupied(ALPHA, 1)],
+      [{ x: 4, y: 2 }, occupied(BETA, 1)],
+    ])),
+    { ...CONFIG, ticksPerSecond: 7 },
+    new BurstCooldownPolicy(1, 5, 3),
+  );
+  const durations: number[] = [];
+  for (let action = 0; action < 3; action += 1) {
+    const cooldown = eventOfKind(increment(engine, ALPHA, action + 1, 1).events, "cooldownStarted");
+    durations.push(cooldown.durationTicks);
+    advance(engine, cooldown.durationTicks);
+  }
+  assert.deepEqual(durations, [7, 7, 35]);
+});
+
+test("burst cooldown policy validates configuration", () => {
+  assert.throws(() => new BurstCooldownPolicy(-1, 5, 3), /Short cooldown/);
+  assert.throws(() => new BurstCooldownPolicy(1, Number.NaN, 3), /Long cooldown/);
+  assert.throws(() => new BurstCooldownPolicy(1, 5, 0), /Increments per burst/);
+  assert.throws(() => new BurstCooldownPolicy(1, 5, 1.5), /Increments per burst/);
+});
+
+test("restoring in the middle of a burst preserves the next action", () => {
+  const policy = new BurstCooldownPolicy(1, 5, 3);
+  const engine = BattleEngine.create(
+    makeSetup(makeGrid(5, 3, [
+      [{ x: 1, y: 1 }, occupied(ALPHA, 1)],
+      [{ x: 2, y: 1 }, occupied(ALPHA, 1)],
+      [{ x: 3, y: 1 }, occupied(ALPHA, 1)],
+      [{ x: 4, y: 2 }, occupied(BETA, 1)],
+    ])), CONFIG, policy,
+  );
+  for (let action = 0; action < 2; action += 1) {
+    const cooldown = eventOfKind(increment(engine, ALPHA, action + 1, 1).events, "cooldownStarted");
+    advance(engine, cooldown.durationTicks);
+  }
+
+  const restored = BattleEngine.restore(engine.getSnapshot(), policy);
+  const third = eventOfKind(increment(restored, ALPHA, 3, 1).events, "cooldownStarted");
+  assert.equal(third.acceptedActionCount, 3);
+  assert.equal(third.durationTicks, 100);
+});
+
 test("a threshold cell splits after exactly ten ticks", () => {
   const engine = BattleEngine.create(
     makeSetup(makeGrid(3, 3, [
@@ -226,6 +308,9 @@ test("a split increments friendly, empty, and enemy cells while skipping walls",
   increment(engine, ALPHA, 1, 1);
   const events = advance(engine, 10);
   const snapshot = engine.getSnapshot();
+
+  // Only the accepted command counts; the resulting split increments do not.
+  assert.equal(snapshot.cooldowns[0]?.acceptedActionCount, 1);
 
   assert.deepEqual(cellAt(snapshot.grid, { x: 1, y: 1 }), empty());
   assert.deepEqual(cellAt(snapshot.grid, { x: 1, y: 0 }), occupied(ALPHA, 3));
@@ -434,8 +519,8 @@ test("restore validates cooldown and split state supplied at its boundary", () =
     () => BattleEngine.restore({
       ...base,
       cooldowns: [
-        { participantId: ALPHA, nextActionTick: 1, durationTicks: 1 },
-        { participantId: ALPHA, nextActionTick: 2, durationTicks: 2 },
+        { participantId: ALPHA, nextActionTick: 1, durationTicks: 1, acceptedActionCount: 1 },
+        { participantId: ALPHA, nextActionTick: 2, durationTicks: 2, acceptedActionCount: 1 },
       ],
     }, NO_COOLDOWN),
     /Duplicate cooldown/,
@@ -443,7 +528,7 @@ test("restore validates cooldown and split state supplied at its boundary", () =
   assert.throws(
     () => BattleEngine.restore({
       ...base,
-      cooldowns: [{ participantId: 99, nextActionTick: 1, durationTicks: 1 }],
+      cooldowns: [{ participantId: 99, nextActionTick: 1, durationTicks: 1, acceptedActionCount: 1 }],
     }, NO_COOLDOWN),
     /not a participant/,
   );
@@ -506,7 +591,7 @@ test("an overflowing direct increment preserves the complete engine state", () =
       [{ x: 2, y: 0 }, occupied(BETA, 1)],
     ]), {
       tick: 7,
-      cooldowns: [{ participantId: BETA, nextActionTick: 7, durationTicks: 0 }],
+      cooldowns: [{ participantId: BETA, nextActionTick: 7, durationTicks: 0, acceptedActionCount: 1 }],
     }),
     NO_COOLDOWN,
   );
@@ -531,7 +616,7 @@ test("a split overflow rolls back its removed queue entry and emptied source", (
       [{ x: 0, y: 0 }, occupied(ALPHA, 1)],
       [{ x: 1, y: 0 }, occupied(BETA, Number.MAX_SAFE_INTEGER)],
     ]), {
-      cooldowns: [{ participantId: ALPHA, nextActionTick: 0, durationTicks: 0 }],
+      cooldowns: [{ participantId: ALPHA, nextActionTick: 0, durationTicks: 0, acceptedActionCount: 1 }],
       pendingSplits: [
         { position: { x: 0, y: 0 }, dueTick: 1, sequence: 8 },
       ],
@@ -640,9 +725,9 @@ test("cooldown serialization follows participant order", () => {
         { participantId: 2, status: "active" },
       ],
       cooldowns: [
-        { participantId: 2, nextActionTick: 3, durationTicks: 3 },
-        { participantId: 4, nextActionTick: 1, durationTicks: 1 },
-        { participantId: 9, nextActionTick: 2, durationTicks: 2 },
+        { participantId: 2, nextActionTick: 3, durationTicks: 3, acceptedActionCount: 1 },
+        { participantId: 4, nextActionTick: 1, durationTicks: 1, acceptedActionCount: 1 },
+        { participantId: 9, nextActionTick: 2, durationTicks: 2, acceptedActionCount: 1 },
       ],
     },
     NO_COOLDOWN,

@@ -33,7 +33,7 @@ test("sends actor-free intents using the local participant stored in client stat
   connection.emit({
     type: "cooldownChanged",
     tick: 0,
-    cooldown: { participantId: BETA, nextActionTick: 10, durationTicks: 10 },
+    cooldown: { participantId: BETA, nextActionTick: 10, durationTicks: 10, acceptedActionCount: 1 },
   });
   assert.equal(battle.getSnapshot().localCommandPending, false);
   await battle.dispose();
@@ -61,7 +61,7 @@ test("keeps interaction pending until the matching command is resolved", async (
   connection.emit({
     type: "cooldownChanged",
     tick: 0,
-    cooldown: { participantId: BETA, nextActionTick: 10, durationTicks: 10 },
+    cooldown: { participantId: BETA, nextActionTick: 10, durationTicks: 10, acceptedActionCount: 1 },
   });
   assert.equal(battle.getSnapshot().localCommandPending, true);
   connection.emit({
@@ -185,7 +185,7 @@ test("local cooldown facts start a full bar that decreases with the battle clock
   connection.emit({
     type: "cooldownChanged",
     tick: 7,
-    cooldown: { participantId: ALPHA, nextActionTick: 17, durationTicks: 10 },
+    cooldown: { participantId: ALPHA, nextActionTick: 17, durationTicks: 10, acceptedActionCount: 1 },
   });
   let state = battle.getSnapshot();
   assert.equal(state.estimatedTick, 7);

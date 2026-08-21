@@ -137,8 +137,12 @@ export class BattleEngine {
       return { accepted: false, reason: "cooldownActive" };
     }
 
+    const previousCooldown = this.state.cooldownFor(context.participantId);
+    const acceptedActionCount = (previousCooldown?.acceptedActionCount ?? 0) + 1;
+    BattleEngine.assertNonNegativeInteger(acceptedActionCount, "Accepted action count");
     const durationTicks = this.cooldownPolicy.durationTicks({
       participantId: context.participantId,
+      acceptedActionCount,
       currentTick: this.state.tick,
       position: { ...command.position },
       snapshot: this.getSnapshot(),
@@ -155,12 +159,14 @@ export class BattleEngine {
       participantId: context.participantId,
       nextActionTick,
       durationTicks,
+      acceptedActionCount,
     });
     events.push({
       kind: "cooldownStarted",
       participantId: context.participantId,
       nextActionTick,
       durationTicks,
+      acceptedActionCount,
     });
     return { accepted: true, events };
   }

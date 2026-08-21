@@ -26,6 +26,7 @@ export function battleEventToServerMessages(
         participantId: event.participantId,
         nextActionTick: event.nextActionTick,
         durationTicks: event.durationTicks,
+        acceptedActionCount: event.acceptedActionCount,
       } }];
     case "participantStatusChanged":
       return [{ type: "participantChanged", tick, participant: {

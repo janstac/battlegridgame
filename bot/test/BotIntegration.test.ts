@@ -144,8 +144,9 @@ test("one ordinary headless player acts independently in two concurrent battles"
     assert.equal(played.increment.cell.count, 2);
     assert.deepEqual(played.cooldown.cooldown, {
       participantId: played.botParticipantId,
-      nextActionTick: 10,
-      durationTicks: 10,
+      nextActionTick: 20,
+      durationTicks: 20,
+      acceptedActionCount: 1,
     });
     const initialIndex = played.increment.position.y
       * played.session.initialSnapshot.grid.width
