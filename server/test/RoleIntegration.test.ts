@@ -270,3 +270,13 @@ for (const rejection of rejectionCases) {
     assert.equal(result.reason.includes(ADMIN_TOKEN), false);
   });
 }
+
+test("gateway rejects binary frames as unsupported data", async (t) => {
+  const app = await startServer(t);
+  const client = await app.connect();
+  const closed = client.closeResult();
+
+  client.socket.send(Buffer.from("{}"));
+
+  assert.deepEqual(await closed, { code: 1003, reason: "text messages required" });
+});

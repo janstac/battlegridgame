@@ -240,6 +240,23 @@ test("the internal detached battle helper remains gated", async (t) => {
   ), true);
 });
 
+test("stale messages for a detached battle do not close the player connection", async (t) => {
+  const app = await harness();
+  t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });
+  const client = await app.connect();
+
+  await client.connection.receive({
+    type: "battleMessage",
+    battleId: "battle-finished",
+    message: { type: "tickProbe", probeId: "stale-probe" },
+  });
+
+  assert.equal(client.violations(), 0);
+  assert.equal(client.connection.isClosed, false);
+  await client.connection.receive({ type: "requestWorldSnapshot" });
+  assert.equal(client.messages.at(-1)?.type, "worldSnapshot");
+});
+
 test("debug battle creation preflights whole-roster capacity without side effects", async (t) => {
   const app = await harness(true, 1);
   t.after(async () => { await app.coordinator.dispose(); await app.battles.dispose(); });

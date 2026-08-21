@@ -116,7 +116,7 @@ export class ClientBattleState {
       const estimatedTick = this.estimateTick();
       if (estimatedTick !== this.viewState.estimatedTick) this.publish();
       const now = this.clock.now();
-      if (now >= nextProbeTime) {
+      if (now >= nextProbeTime && this.battle.status.kind !== "finished") {
         nextProbeTime = now + this.probeIntervalMs;
         void this.sendProbe();
       }

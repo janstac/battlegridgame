@@ -1,10 +1,10 @@
 import type { Server as HttpServer, IncomingMessage } from "node:http";
 import {
+  AdminNetworkClientMessageValidator,
+  AnonymousNetworkClientMessageValidator,
+  NetworkClientMessageValidator,
   parseAdminConnectionServerMessage,
-  parseAdminNetworkClientMessage,
   parseAdminNetworkServerMessage,
-  parseAnonymousNetworkClientMessage,
-  parseNetworkClientMessage,
   parseNetworkServerMessage,
   type AdminConnectionServerMessage,
   type AdminNetworkClientMessage,
@@ -98,9 +98,12 @@ export class BattleWebSocketGateway {
     this.webSockets.add(socket);
     this.sessions.set(socket, { role: "anonymous" });
     socket.on("message", (data, isBinary) => {
-      if (isBinary) { socket.close(1008, "text messages required"); return; }
-      try { this.receive(socket, JSON.parse(data.toString())); }
-      catch { socket.close(1008, "invalid message"); }
+      if (isBinary) { socket.close(1003, "text messages required"); return; }
+      let value: unknown;
+      try { value = JSON.parse(data.toString()); }
+      catch { socket.close(1008, "invalid message"); return; }
+      try { this.receive(socket, value); }
+      catch (error) { this.failSocket(socket, error); }
     });
     socket.once("close", () => {
       this.webSockets.delete(socket);
@@ -117,7 +120,11 @@ export class BattleWebSocketGateway {
     if (session === undefined) return;
     switch (session.role) {
       case "anonymous": {
-        const message = parseAnonymousNetworkClientMessage(value);
+        if (!AnonymousNetworkClientMessageValidator.Check(value)) {
+          socket.close(1008, "invalid message");
+          return;
+        }
+        const message = value;
         if (message.type === "connectAsAdmin") {
           if (message.token !== ADMIN_TOKEN) { socket.close(1008, "authentication failed"); return; }
           this.sessions.set(socket, { role: "admin", operations: Promise.resolve() });
@@ -147,12 +154,20 @@ export class BattleWebSocketGateway {
         return;
       }
       case "player": {
-        const message = parseNetworkClientMessage(value);
+        if (!NetworkClientMessageValidator.Check(value)) {
+          socket.close(1008, "invalid message");
+          return;
+        }
+        const message = value;
         void session.connection.receive(message).catch((error: unknown) => this.failSocket(socket, error));
         return;
       }
       case "admin": {
-        const message = parseAdminNetworkClientMessage(value);
+        if (!AdminNetworkClientMessageValidator.Check(value)) {
+          socket.close(1008, "invalid message");
+          return;
+        }
+        const message = value;
         const output: AdminMessageOutput = (outbound) => this.sendAdminMessage(socket, outbound);
         const next = session.operations.then(() => this.handleAdminMessage(message, output));
         session.operations = next.catch(() => undefined);

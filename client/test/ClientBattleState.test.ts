@@ -177,6 +177,26 @@ test("authoritative probes correct a tick estimate that ran ahead", async () => 
   await battle.dispose();
 });
 
+test("does not probe after the battle reaches terminal state", async () => {
+  const connection = new RecordingBattleEngineConnection();
+  const clock = new ManualBattleClock();
+  const battle = new ClientBattleState(connection, ALPHA, {
+    clock,
+    probeIntervalMs: 1_000,
+  });
+
+  connection.emit({
+    type: "battleStatusChanged",
+    tick: 0,
+    status: { kind: "finished", winnerId: ALPHA },
+  });
+  clock.runTicks(40, 50);
+  await Promise.resolve();
+
+  assert.deepEqual(connection.sent, []);
+  await battle.dispose();
+});
+
 test("local cooldown facts start a full bar that decreases with the battle clock", async () => {
   const connection = new RecordingBattleEngineConnection();
   const clock = new ManualBattleClock();

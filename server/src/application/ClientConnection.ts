@@ -131,7 +131,10 @@ export class ClientConnection {
         await this.coordinator.leaveBattle(this, message.battleId, message.requestId); return;
       case "battleMessage": {
         const membership = this.memberships.get(message.battleId);
-        if (membership === undefined) { this.failProtocol(); return; }
+        // A battle can finish while a valid command or probe is already in
+        // flight. Once detached, that stale message has no effect and is not a
+        // transport protocol violation.
+        if (membership === undefined) return;
         await membership.battle.receive(membership.participantId, message.message, (reply) => {
           if (!this.closed && this.memberships.has(message.battleId)) {
             this.send({ type: "battleMessage", battleId: message.battleId, message: reply });
@@ -233,9 +236,4 @@ export class ClientConnection {
       : { type: "worldCommandRejected", requestId, reason });
   }
 
-  private failProtocol(): void {
-    const transport = this.transport;
-    void this.close();
-    transport?.protocolViolation();
-  }
 }
