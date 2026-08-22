@@ -4,7 +4,7 @@ import { NetworkClient } from "@grid-game/client/headless";
 
 import type { BotFactory } from "./Bot.ts";
 import { BotRuntime, type BotRuntimeResult } from "./BotRuntime.ts";
-import { RandomBot } from "./RandomBot.ts";
+import { SmartBot } from "./SmartBot.ts";
 
 export interface BotSignalSource {
   on(signal: "SIGINT" | "SIGTERM", listener: () => void): void;
@@ -59,7 +59,7 @@ export async function runBotCli(
   }
 
   const connect = dependencies.connect ?? NetworkClient.connect;
-  const factory = dependencies.factory ?? (() => new RandomBot());
+  const factory = dependencies.factory ?? (() => new SmartBot());
   const signals = dependencies.signals ?? process;
   let client: NetworkClient | null = null;
   let runtime: BotRuntime | null = null;
